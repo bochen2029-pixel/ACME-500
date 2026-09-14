@@ -79,6 +79,8 @@ struct Residual {
   double warrant = 0;        // a signature, liability. A legal fact. Does not move.
   double counterparty = 0;   // the other side demands a person. Does not move.
   double frame = 0;          // what business are we in. Moves slowly, needs an arena.
+  double frame_wait = 0;     //   of which: a licensable band still below rung 2. Moves with time.
+  double frame_cov = 0;      //   of which: the uninstrumented tail of a licensed class. Moves with lane-buys.
   double thin_tape = 0;      // the world answers too slowly to license. Moves at the world's pace.
   double licensed = 0;       // decision mass under licence
   double total = 0;
@@ -102,8 +104,8 @@ inline Residual residual_of(const Ladder& lad, float demand_scale, const Compile
     const double cov = C.coverage.empty() ? 1.0 : C.coverage[c];
     if (any)       r.licensed += mass * std::min(1.0, cov);
     else if (thin) r.thin_tape += mass;
-    else           r.frame += mass;
-    if (any && cov < 1.0) r.frame += mass * (1.0 - cov);   // the uninstrumented tail of a licensed class
+    else         { r.frame += mass; r.frame_wait += mass; }                              // waits on the ladder
+    if (any && cov < 1.0) { r.frame += mass * (1.0 - cov); r.frame_cov += mass * (1.0 - cov); }   // the uninstrumented tail of a licensed class
   }
   return r;
 }
@@ -190,6 +192,157 @@ inline void print_time_ledger(const TimeLedger& L, const char* title) {
   }
   std::printf("    %-10s %6.2f%%  <- the decide fraction. Everything else is the round trip.\n",
               "JUDGMENT", 100.0 * L.decide.sum() / t);
+}
+
+// ----------------------------------------------------------------------------
+// §5 · THE PRINTS THAT ATTRIBUTE (ARCHITECTURE_v2 §9.3) — folds over the tape,
+// the ledger and the ladder. Nothing here is an input to anything the machine
+// computes; each one exists so that a number above it has a cause beside it.
+// ----------------------------------------------------------------------------
+
+// MINUTES BY VIA. Every human minute on the tape (ACT rows, the fetch minutes
+// on CONTEXT rows, MEETING rows) attributed to how the cell it was spent on
+// left the building. What bought the queue — the field deleting meeting-and-
+// glue minutes, or drafts replacing decide-fetch-frame minutes — is not a
+// reading until this prints. The full tensor minutes[seat][class][via] is the
+// same fold with two more indices; this prints its via × kind marginal.
+enum ViaRow { VR_PERSON = 0, VR_ACTED, VR_DRAFTED, VR_RENTED, VR_SIGNED, VR_UNDECIDED, VR_NOCELL, VR_N };
+inline const char* via_row_name(int v) {
+  static const char* n[] = { "a person decided (via 0)", "the resident acted (via 1)", "drafted, a person keyed (via 2)",
+                             "a rented mind acted (via 3)", "a signer executed (via 4)", "never decided, open at the end",
+                             "no cell: glue and meetings" };
+  return n[v % VR_N];
+}
+struct MinutesByVia {
+  double m[VR_N][ACT_N] = {};
+  double row(int v) const { double s = 0; for (int k = 0; k < ACT_N; ++k) s += m[v][k]; return s; }
+  double col(int k) const { double s = 0; for (int v = 0; v < VR_N; ++v) s += m[v][k]; return s; }
+  double total() const { double s = 0; for (int v = 0; v < VR_N; ++v) s += row(v); return s; }
+};
+inline MinutesByVia minutes_by_via(const Tape& tape, const Ledger& L) {
+  MinutesByVia M;
+  auto bucket = [&](uint32_t oid) -> int {
+    const Obligation* o = L.at_oid(oid);
+    if (!o) return VR_NOCELL;
+    if (o->via >= 1 && o->via <= 4) return (int)o->via;                       // VR_ACTED..VR_SIGNED line up with via
+    return (o->state == OB_DECIDED || o->state == OB_SETTLED) ? VR_PERSON : VR_UNDECIDED;
+  };
+  tape.fold([&](const Rec& r) {
+    if (r.arm != ARM_HUMAN) return;
+    switch (r.type) {
+      case R_ACT:     if (r.a >= 0 && r.a < ACT_N) M.m[bucket(r.oid)][r.a] += r.value; return;
+      case R_CONTEXT: if (r.seat >= 0 && !(r.flags & RF_LOST)) M.m[bucket(r.oid)][ACT_FETCH] += r.value; return;
+      case R_MEETING: M.m[VR_NOCELL][ACT_MEETING] += r.value; return;
+      default: return;
+    }
+  });
+  return M;
+}
+inline void print_minutes_by_via(const MinutesByVia& M, const char* title) {
+  const double t = std::max(1.0, M.total());
+  std::printf("\n  MINUTES BY VIA — %s: %0.0f thousand human minutes, by how the cell left the building\n", title, t / 1000.0);
+  std::printf("  %-34s", "thousands of minutes");
+  for (int k = 0; k < ACT_N; ++k) std::printf(" %8s", act_name(k));
+  std::printf(" %9s %6s\n", "total", "share");
+  for (int v = 0; v < VR_N; ++v) {
+    if (M.row(v) <= 0.0) continue;
+    std::printf("  %-34s", via_row_name(v));
+    for (int k = 0; k < ACT_N; ++k) std::printf(" %8.1f", M.m[v][k] / 1000.0);
+    std::printf(" %9.1f %5.1f%%\n", M.row(v) / 1000.0, 100.0 * M.row(v) / t);
+  }
+  std::printf("  %-34s", "all");
+  for (int k = 0; k < ACT_N; ++k) std::printf(" %8.1f", M.col(k) / 1000.0);
+  std::printf(" %9.1f %5.1f%%\n", M.total() / 1000.0, 100.0);
+}
+
+// THE BINDING REASON PER BAND. For every class-band, the first thing in the
+// ladder's own order (license_from_history, then Ladder::step) that keeps the
+// licence from being one rung wider. Where n_machine binds, volume is the
+// lever; where no-history binds, the lever is the determinant the human read
+// and the machine did not; where kappa binds, the licence costs more attention
+// than it saves; where logE binds, the world has answered and the evidence has
+// not crossed 1/alpha yet. Band 0 is the thin band: the gate drafts it or rents
+// a mind for it at every rung, so no wager outcome can ever arrive there and
+// nothing on the ladder applies. `unlicensable` (n0 unreachable inside a term
+// at any tolerable canary rate) is a label the ladder never reads, so it is
+// printed as a qualifier on the reason and never as the reason.
+enum Binding { BR_TOP = 0, BR_THIN_BAND, BR_NO_HISTORY, BR_N_MACHINE, BR_LOGE, BR_KAPPA, BR_EXPIRY, BR_WIDENING, BR_N };
+inline const char* binding_name(int r) {
+  static const char* n[] = { "at-top", "thin-band", "no-history", "n_machine", "logE", "kappa", "expiry", "widening" };
+  return n[r % BR_N];
+}
+inline const char* binding_lever(int r) {
+  static const char* n[] = { "rung 5; nothing binds",
+                             "the thin band: drafted or rented at every rung, never a wager; nothing on the ladder applies",
+                             "never admitted: the determinant the human read and the machine did not",
+                             "fewer wager outcomes than the floor: volume, the canary rate",
+                             "outcomes past the floor, the e-process below 1/alpha: the world's answer",
+                             "supervision created exceeds supervision removed: the licence costs more than it saves",
+                             "past its expiry with no re-earned evidence: the next step narrows it",
+                             "evidence past 1/alpha: widens at the next step" };
+  return n[r % BR_N];
+}
+inline int binding_reason(const Lic& L, const Ladder& lad, const Writ& wr, uint32_t day, int band) {
+  if (band == 0) return BR_THIN_BAND;
+  if (L.rung >= 5) return BR_TOP;
+  if (L.rung >= 1 && L.kappa() > wr.kappa_max && L.sup_removed > 60.0) return BR_KAPPA;
+  if (L.rung > 1 && L.expiry_day > 0 && (int)day > L.expiry_day) return BR_EXPIRY;
+  const bool enough = L.n_machine >= L.n0 || (L.history_licensed && band == 2 && L.n_machine >= std::max(20, L.n0 / 8));
+  if (!enough) return (L.rung == 0 && !L.history_licensed) ? BR_NO_HISTORY : BR_N_MACHINE;
+  if (L.logE <= std::log(1.0 / lad.alpha_promote)) return BR_LOGE;
+  return BR_WIDENING;
+}
+inline void print_binding_reasons(const Ladder& lad, const Writ& wr, uint32_t day) {
+  long n[BR_N][NBAND] = {}; long unl = 0, top_under_floor = 0;
+  for (int c = 0; c < lad.NC; ++c) for (int b = 0; b < NBAND; ++b) {
+    const Lic& L = lad.at(c, b);
+    ++n[binding_reason(L, lad, wr, day, b)][b];
+    if (b > 0 && L.unlicensable) ++unl;
+    if (L.rung >= 5 && L.n_machine < L.n0) ++top_under_floor;
+  }
+  std::printf("\n  THE BINDING REASON PER BAND at day %u: the first thing in the ladder's own order that\n"
+              "  keeps each class-band from one rung wider, and what moves it\n\n", day);
+  std::printf("  %-12s", "reason");
+  for (int b = 0; b < NBAND; ++b) std::printf("  band%d", b);
+  std::printf("  %5s   %s\n", "all", "the lever");
+  for (int r = 0; r < BR_N; ++r) {
+    long tot = 0; for (int b = 0; b < NBAND; ++b) tot += n[r][b];
+    if (!tot) continue;
+    std::printf("  %-12s", binding_name(r));
+    for (int b = 0; b < NBAND; ++b) std::printf("  %5ld", n[r][b]);
+    std::printf("  %5ld   %s\n", tot, binding_lever(r));
+  }
+  std::printf("\n  %-22s %-34s %-11s %-18s %s\n", "class", "binding 0/1/2 (*: n0 unreachable)", "rung 0/1/2", "n_act 0/1/2", "n0");
+  for (int c = 0; c < lad.NC; ++c) {
+    char bind[80]; snprintf(bind, sizeof bind, "%s/%s%s/%s%s",
+                            binding_name(binding_reason(lad.at(c, 0), lad, wr, day, 0)),
+                            binding_name(binding_reason(lad.at(c, 1), lad, wr, day, 1)), lad.at(c, 1).unlicensable ? "*" : "",
+                            binding_name(binding_reason(lad.at(c, 2), lad, wr, day, 2)), lad.at(c, 2).unlicensable ? "*" : "");
+    char rung[32]; snprintf(rung, sizeof rung, "%d/%d/%d", lad.at(c, 0).rung, lad.at(c, 1).rung, lad.at(c, 2).rung);
+    char nact[48]; snprintf(nact, sizeof nact, "%ld/%ld/%ld", lad.at(c, 0).n_machine, lad.at(c, 1).n_machine, lad.at(c, 2).n_machine);
+    std::printf("  %-22s %-34s %-11s %-18s %d\n", cls_spec(c).name, bind, rung, nact, lad.at(c, 0).n0);
+  }
+  std::printf("\n  * %ld of %d bands past the thin band have n0 unreachable inside a term at any tolerable canary\n"
+              "    rate (F14); the ladder never reads that label.  %ld bands sit at rung 5 with fewer wager\n"
+              "    outcomes than n0: the floor is checked against cumulative n_machine, so it is paid once and\n"
+              "    not per rung, and on a history-admitted band 2 it is n0/8 (F21, recorded and not fixed here).\n",
+              unl, lad.NC * (NBAND - 1), top_under_floor);
+}
+
+// THE ROW HISTOGRAM. Rows by type, from which the write share S of §1 becomes
+// computable on writes rather than on minutes.
+inline void print_row_histogram(const Tape& tape) {
+  unsigned long long n[R_N] = {};
+  tape.fold([&](const Rec& r) { if (r.type < R_N) ++n[r.type]; });
+  std::printf("  rows by type:");
+  int col = 15;
+  for (int t = 0; t < R_N; ++t) {
+    if (!n[t]) continue;
+    char cell[48]; const int w = snprintf(cell, sizeof cell, " %s %llu", rec_type_name(t), n[t]);
+    if (col + w > 100) { std::printf("\n               "); col = 15; }
+    std::printf("%s", cell); col += w;
+  }
+  std::printf("\n");
 }
 
 } // namespace acme

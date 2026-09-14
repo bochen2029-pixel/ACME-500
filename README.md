@@ -2,7 +2,7 @@
 
 **A virtual enterprise of 500 knowledge workers, and its automation, in one C++17 binary with no dependencies. It exists so that a method for automating organizations can be graded by a world that answers in seconds instead of quarters, and can fail cheaply before any real firm is asked to be the grader.**
 
-3,827 lines on branch `v2` (v1 is tag `v1-step-A`). Five modes. Twenty oracles in the binary and three on the source tree, each carrying a lie that it must be seen to catch. Every number it prints is a reading, and the readings that turned out wrong are printed as retractions in the receipts.
+3,993 lines on branch `v2` (v1 is tag `v1-step-A`). Five modes. Twenty oracles in the binary and three on the source tree, each carrying a lie that it must be seen to catch. Every number it prints is a reading, and the readings that turned out wrong are printed as retractions in the receipts.
 
 ```
 g++ -O2 -std=c++17 -Iinclude -Wall -Wextra -ffp-contract=off src/main.cpp -o acme
@@ -43,7 +43,7 @@ The readings as they stand, synthetic firm, one writ, 500 seats, demand 1.5:
 - **The residual.** Warrant 4.7, counterparty 0.7, frame 14.3, thin tape 16.7 percent. The first two do not move when models improve.
 - **The multiverse.** Ten structural patches, six rollouts each. The three that buy a lane, moving a class's unrecorded determinants into a system of record, take the top three places every time. With the queue priced, acting sooner beats acting later; with it free, the reverse.
 
-Three findings are recorded and not fixed: the novelty score has no variance once lateness is removed from it; the frontier is re-rented daily for the same escalated case; the writ's uniform floor cannot bind at this schema because the identifiability floor exceeds the canary cap in every class. They are in the receipt with their lines.
+Four findings are recorded and not fixed: the novelty score has no variance once lateness is removed from it; the frontier is re-rented daily for the same escalated case; the writ's uniform floor cannot bind at this schema because the identifiability floor exceeds the canary cap in every class; and the ladder's floor is paid once, not per rung, so eight of the ten bands at the top rung got there with fewer wager outcomes than n₀ (F21, found by the binding-reason print in [the C0 receipt](receipts/RECEIPT_ACME500_STEP-C0_2026-09-14.md)). They are in the receipts with their lines.
 
 ## The five modes
 

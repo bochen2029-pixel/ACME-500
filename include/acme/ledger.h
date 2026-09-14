@@ -119,6 +119,10 @@ struct Ledger {
     if (oid == 0 || oid >= idx_of_oid.size() || idx_of_oid[oid] == 0) return nullptr;
     return &ob[idx_of_oid[oid] - 1];
   }
+  const Obligation* at_oid(uint32_t oid) const {
+    if (oid == 0 || oid >= idx_of_oid.size() || idx_of_oid[oid] == 0) return nullptr;
+    return &ob[idx_of_oid[oid] - 1];
+  }
   // the live arm opens a cell directly and writes the row itself; the fold opens it from the row
   uint32_t open_cell(const Obligation& o) {
     if (o.id >= idx_of_oid.size()) idx_of_oid.resize((size_t)o.id + 1024, 0);

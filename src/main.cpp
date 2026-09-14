@@ -118,6 +118,7 @@ static int cmd_sim(const Args& a) {
   std::printf("\n  tape: %zu rows, chain head %s..., verify %s   (%.1f s, %.0f rows/s)\n",
               R.tape.size(), R.tape.head_hex().substr(0, 16).c_str(),
               R.tape.verify() < 0 ? "OK" : "BROKEN", dt, R.tape.size() / std::max(1e-9, dt));
+  print_row_histogram(R.tape);
   std::printf("\n  READ THE LEDGER AGAIN. The escalation line is the round trip in its purest form:\n"
               "  every one of those %llu escalations made a manager re-open systems an IC had\n"
               "  already opened, because the manager could not see the IC's screen.\n",
@@ -253,6 +254,7 @@ static int cmd_automate(const Args& a) {
               "  rate: n0 is not a constant, it is n0(p, delta), so the rarest-failure classes\n"
               "  are the SLOWEST to license. The honest account prints them as human rather\n"
               "  than holding them in shadow forever.\n", licensed_bands, unlicensable);
+  print_binding_reasons(A.lad, R.f.writ, (uint32_t)(a.days - 1));
 
   rule("PHASE 5 · WHAT THE RESIDENT DID");
   std::printf("  acted unattended %llu   drafted for a person %llu   rented a frontier mind %llu\n"
@@ -270,6 +272,7 @@ static int cmd_automate(const Args& a) {
   std::printf("  A class whose licence costs more attention than it saves is demoted the same\n"
               "  day, regardless of how good the model looks. That is the only meter in this\n"
               "  program that can fail while every other number improves.\n");
+  print_minutes_by_via(minutes_by_via(R.tape, R.L), "the resident arm, warm period included");
 
   rule("PHASE 6 · THE CASCADE — THE MIDDLE LEAVES BY ARITHMETIC");
   const Cascade cs = fit_cascade(a.span, a.seed);
@@ -296,6 +299,8 @@ static int cmd_automate(const Args& a) {
   std::printf("  warrant         %6.1f%%   a signature, liability, someone who can be sued. Does not move.\n", 100 * A.res.warrant / T);
   std::printf("  counterparty    %6.1f%%   the other side demands a person. Does not move.\n", 100 * A.res.counterparty / T);
   std::printf("  frame           %6.1f%%   uninstrumented determinants and classes that are two classes.\n", 100 * A.res.frame / T);
+  std::printf("     of which     %6.1f%%   wait: a licensable band still below rung 2. Moves with time.\n", 100 * A.res.frame_wait / T);
+  std::printf("                  %6.1f%%   coverage: the uninstrumented tail of licensed classes. Moves with lane-buys.\n", 100 * A.res.frame_cov / T);
   std::printf("  thin tape       %6.1f%%   the world answers too slowly to ever license. Moves at the\n"
               "                          world's pace, not the model's.\n", 100 * A.res.thin_tape / T);
   std::printf("\n  Two of the four do not move when models improve. That is the honest answer to\n"
@@ -310,6 +315,7 @@ static int cmd_automate(const Args& a) {
   std::printf("  Everything else in this program is upstream of that number or downstream of it.\n");
   std::printf("\n  tape %zu rows, chain %s.  resident period %.2f ms over %d periods.\n",
               R.tape.size(), R.tape.verify() < 0 ? "VERIFIED" : "BROKEN", A.period_ms, A.periods);
+  print_row_histogram(R.tape);
   return 0;
 }
 
@@ -352,6 +358,9 @@ static int cmd_twin(const Args& a) {
   row("TOTAL cost, $M",          ra.total_cost() / 1e6, rb.total_cost() / 1e6, "%.2f");
   row("human minutes, thousands", A.hs.time.total() / 1000.0, B.hs.time.total() / 1000.0, "%.0f");
   row("still open at the end",   (double)A.L.open_idx.size(), (double)B.L.open_idx.size(), "%.0f");
+  // §9.3: what bought the queue. The same fold on both arms' tapes.
+  print_minutes_by_via(minutes_by_via(A.tape, A.L), "the incumbent arm");
+  print_minutes_by_via(minutes_by_via(B.tape, B.L), "the resident arm");
 
   // THE BIAS OF THE CANARY ESTIMATOR
   CanaryBias cb;
