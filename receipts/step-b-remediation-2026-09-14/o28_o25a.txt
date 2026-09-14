@@ -1,0 +1,4 @@
+  [PASS] O28  no dead physics: every free function in firm.h/world.h has a caller (13 functions)
+  [PASS] O28  no dead physics: the planted orphan was caught, and nothing else is dead   (with oracle 28 lied to: PASS on its line means the lie was caught)
+  [PASS] O25a the kernel reads no clock: machine.h, solver.h, ledger.h, report.h read time only from TICK rows
+  [PASS] O25a the kernel reads no clock: the planted clock read was caught   (with oracle 25 lied to: PASS on its line means the lie was caught)

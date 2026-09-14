@@ -149,6 +149,19 @@ struct Ledger {
     L.compact();
     return L;
   }
+  // The minute meter alone, from ACT, CONTEXT and MEETING rows: what the compile
+  // step reads for the decide fraction. A real firm can carry these rows (as
+  // time-use survey rows tagged RF_TORN_OR_SURVEY); it cannot carry a meter.
+  static std::vector<TimeLedger> fold_minutes(const Tape& tape, int NC) {
+    Ledger L; L.init(NC);
+    tape.fold([&](const Rec& r) {
+      if (r.type == R_ACT || r.type == R_MEETING || (r.type == R_CONTEXT && !(r.flags & RF_LOST) && r.seat >= 0)) {
+        if (r.type == R_CONTEXT) { L.total.fetch.add(r.value); if (r.cls < NC) L.by_class[r.cls].fetch.add(r.value); }
+        else L.apply(r);
+      }
+    });
+    return L.by_class;
+  }
 };
 
 // O14 · FOLD-TO-IDENTITY. The cold fold against the live world, field by field.

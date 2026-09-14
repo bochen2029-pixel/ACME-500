@@ -45,7 +45,8 @@
 #include "firm.h"
 #include "world.h"
 #include "solver.h"
-#include "human.h"   // for TimeLedger: the compile step reads the metered minutes
+#include "human.h"   // for TimeLedger
+#include "ledger.h"  // the compile step reads the minute meter as a FOLD of ACT rows, never the live meter
 
 namespace acme {
 
@@ -67,9 +68,13 @@ struct Compiled {
 
 // Read the tape as the application's query log and recover the join graph. This
 // is a fold, so it is replayable and two runs give the same table.
-inline Compiled compile_from_tape(const Tape& tape, const TimeLedger* by_class, int NC,
-                                  uint64_t seed, bool trunk_geometry = true) {
+inline Compiled compile_from_tape(const Tape& tape, int NC, uint64_t seed, bool trunk_geometry = true) {
   Compiled C; C.NC = NC;
+  // v2 (step B remediation): the minute meter is folded from the tape's ACT,
+  // CONTEXT and MEETING rows. The in-memory HumanStats meter is no longer an
+  // input to anything the machine computes.
+  const std::vector<TimeLedger> folded = Ledger::fold_minutes(tape, NC);
+  const TimeLedger* by_class = folded.data();
   C.join_graph.assign(NC, 0u); C.n_systems.assign(NC, 0);
   C.coverage.assign(NC, 0.f); C.decide_frac.assign(NC, 0.f);
   C.invariants.assign(NC, 0); C.invariants_proposed.assign(NC, 0);

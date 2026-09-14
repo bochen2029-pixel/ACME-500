@@ -713,6 +713,20 @@ The greenfield arm (`via` 2 → 1: every draft an unattended act) runs on the fi
 
 ---
 
+## §14a · Amendment, 2026-09-14, after step B and its review
+
+Step B landed on branch `v2` (`receipts/RECEIPT_ACME500_STEP-B_2026-09-14.md`). The paper session's review of it changed this document in five places, all of them precision rather than direction:
+
+1. **The ledger is a verified shadow until C0.** `ledger.h` folds the tape and O14 proves the fold equals the live world, but no consumer reads the fold yet. §14's step C splits into **C0** (consumers onto the fold, the `Plant`/`Ledger`/`Store` split in code, the machine's TU under `-DACME_NO_PLANT`, O17; every reading byte-identical to v1) and **C1** (the judge port, `PlantJudge` on its own key, the read budget, planted truth off the path, the governor's TU and `STRATUM`, O16, O21; numbers move and each delta is named against C0). The minutes-by-via, binding-reason and frame-split prints belong to C0.
+2. **C1 carries three items §14 omitted:** the frame-hash rule of §3.6 (the memo key is the promise's own rows, the template pin and span *contents*, never the clock); `template_hash` in the licence key (§4.5); and the forgone-dual print, the sum of the shadow prices of the cells the read budget did not reach, which is nearly free once the duals exist.
+3. **`TICK` is emitted, not yet obeyed.** The loop in `main` still drives the period; the inversion (drain intake, fold a `TICK`, run `period()`) lands in step D with the durable tape, and only then can the dynamic **O25** run. What runs today is **O25a**, a source scan of the kernel's files for any clock or environment read, with its own lie.
+4. **The pin is the alphabet.** `alphabet_hash()` covers the record version, every record type, verb, reason, act kind and provenance, the band count, the outcome kinds and the class table; the HEADER row carries it and O14 asserts it. `schema_hash()` (the class table alone) is one of its inputs.
+5. **O29, row-shape conformance**, is added to §11: one scan of the tape asserting per type that the fields §3.2 says are populated are populated; its lie is an `ARRIVE` with no due day. It is the oracle that catches table drift for the rest of the programme.
+
+Also recorded: `completeness` in the folded cell is read from rows (the frame and decide `ACT` rows, the mid-case `HOLD`, the `PROPOSAL`), never from the plant; the value on those rows is still the plant's at write time and becomes `completeness_hat` in C1. `PROPOSAL.b` is a placeholder judge hash until C1. The compile step's decide fraction is now a fold of `ACT` rows (S5 landed in the remediation; O13 identical). For step D: a `HOLD` row when the reason changes, not per seat per day, with O14 holding across the change.
+
+---
+
 ## §15 · The kills
 
 Run: the act-loop kill (twice); the demand sweep; the meetings-off twin; the δ-0.40 automate; the buy-every-lane automate and twin. Registered:

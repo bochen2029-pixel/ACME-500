@@ -264,6 +264,30 @@ enum Reason : uint8_t {
   RS_NO_BUDGET, RS_BLOCKED, RS_AUDIT, RS_CANARY, RS_UNSURE, RS_N
 };
 inline const char* verdict_name(int v) { static const char* n[] = {"HOLD","ACT","DRAFT","FRONTIER","WARRANT"}; return n[v % V_N]; }
+inline const char* reason_name(int r);
+// THE ALPHABET PIN. Train == serve at the tokenizer: the synthetic world and a
+// real lane emit rows under one pin, the HEADER row carries it, a fold refuses
+// a tape whose pin differs. It covers everything a row can say: the record
+// version, every record type by name, every verb, every refusal reason, every
+// act kind, every provenance, the band count, the outcome kinds, and the
+// authored class table (schema_hash). Adding a reason or a row type changes it,
+// which is the widening the pin exists to make loud.
+inline uint32_t alphabet_hash() {
+  Blake2b b;
+  const uint32_t ver = REC_VER; b.update(&ver, 4);
+  const uint32_t nt = R_N;  b.update(&nt, 4);
+  for (int t = 0; t < R_N; ++t)  { const char* s = rec_type_name(t); b.update(s, strlen(s)); }
+  const uint32_t nv = V_N;  b.update(&nv, 4);
+  for (int v = 0; v < V_N; ++v)  { const char* s = verdict_name(v);  b.update(s, strlen(s)); }
+  const uint32_t nr = RS_N; b.update(&nr, 4);
+  for (int r = 0; r < RS_N; ++r) { const char* s = reason_name(r);   b.update(s, strlen(s)); }
+  const uint32_t na = ACT_N; b.update(&na, 4);
+  for (int k = 0; k < ACT_N; ++k) { const char* s = act_name(k);     b.update(s, strlen(s)); }
+  const uint32_t nb = NBAND, no = OK_N, np = 4; b.update(&nb, 4); b.update(&no, 4); b.update(&np, 4);
+  const uint32_t sh = schema_hash(); b.update(&sh, 4);
+  uint8_t h[32]; b.final(h);
+  return (uint32_t)h[0] | ((uint32_t)h[1] << 8) | ((uint32_t)h[2] << 16) | ((uint32_t)h[3] << 24);
+}
 inline const char* reason_name(int r) {
   static const char* n[] = {"ok","unlicensed","thin-margin","novel-case","irreversible","law","no-adjudication-budget","blocked-by-dep","audit-sample","canary","unsure-placement"};
   return n[r % RS_N];

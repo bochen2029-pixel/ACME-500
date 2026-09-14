@@ -195,7 +195,13 @@ enum RecType : uint16_t {
   R_CORRECTION,  // a later reply corrected a reading: a = the corrected row's index, b = the reading judge's hash
   R_N
 };
+inline const char* rec_type_name(int t) {
+  static const char* n[] = { "NONE","ARRIVE","ASSIGN","HOLD","DECIDE","EFFECT","UNDO","ESCALATE","OUTCOME","CONTEXT","MEETING",
+                             "TICK","LICENSE","KAPPA","PATCH","NOTE","HEADER","PROPOSAL","STRATUM","COUNSEL","ACT","RECEIPT","CORRECTION" };
+  return (t >= 0 && t < R_N) ? n[t] : "?";
+}
 enum ActKind : uint8_t { ACT_FETCH = 0, ACT_FRAME, ACT_DECIDE, ACT_COMMIT, ACT_TRANSPORT, ACT_REWORK, ACT_GLUE, ACT_MEETING, ACT_N };
+inline const char* act_name(int k) { static const char* n[] = {"fetch","frame","decide","commit","transport","rework","glue","meeting"}; return (k >= 0 && k < ACT_N) ? n[k] : "?"; }
 enum Prov : uint8_t { PROV_D = 0, PROV_H, PROV_M, PROV_R };   // deterministic · human-authored · model-authored · model-reduced
 // Who wrote the row. Where a decision exists it is THE DECIDER; elsewhere it is
 // the writer: 0 the human arm's code, 1 the resident, 2 the governor / the world

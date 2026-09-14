@@ -81,7 +81,7 @@ static void run_human(Run& R, int days, bool chain = true) {
   R.tape.chaining = chain;
   R.hs.init(R.w.NC);
   auto rep = reports_of(R.f);
-  if (R.tape.size() == 0) R.tape.header(MODE_SYNTHETIC, SW_LIVE, schema_hash());
+  if (R.tape.size() == 0) R.tape.header(MODE_SYNTHETIC, SW_LIVE, alphabet_hash());
   for (int d = 0; d < days; ++d) {
     R.tape.tick((uint32_t)d);                       // v2: the clock is a row
     world_arrive(R.w, R.tape, (uint32_t)d);
@@ -144,7 +144,7 @@ static AutoOut run_machine(const Args& a, Run& R, int warm_days, int total_days,
   AutoOut out;
   // ---- PHASE 0/1: the boundary log and the warm history. Nobody uses anything.
   run_human(R, warm_days);
-  out.C = compile_from_tape(R.tape, R.hs.by_class.data(), R.w.NC, a.seed, true);
+  out.C = compile_from_tape(R.tape, R.w.NC, a.seed, true);
 
   // ---- PHASE 2: the resident, compiled, not yet acting
   Resident res;
@@ -390,7 +390,7 @@ static double eval_patch(const Args& a, const Patch& p, uint64_t seed, int days)
   Run R; R.f = build_acme(a.n, p.span, seed); R.w = make_world(seed); R.w.demand_scale = a.demand;
   // v2: every patch lands as a PATCH row carrying its inverse (margin = old, value = new)
   // before the run, so a fold of the fork's tape knows which universe it is.
-  R.tape.header(MODE_SYNTHETIC, SW_LIVE, schema_hash());
+  R.tape.header(MODE_SYNTHETIC, SW_LIVE, alphabet_hash());
   const Writ base;
   auto patch_row = [&](int kind, int param, float oldv, float newv) {
     if (oldv != newv) R.tape.put(R_PATCH, 0, 0, param < 0 ? 0 : param, -3, ARM_GOVERNOR, kind, param, oldv, newv);
@@ -548,11 +548,45 @@ static int cmd_selftest(const Args& a) {
       const Ledger L = Ledger::fold(A.tape, A.w.NC);
       const FoldDiff fd_ = ledger_diff(L, A.w);
       const long mins = minutes_diff(L, A.hs, A.w.NC);
-      const bool ok = fd_.fields == 0 && mins == 0 && L.schema == schema_hash() && L.ver == REC_VER;
-      snprintf(buf, sizeof buf, "(%zu cells folded from %zu rows; %ld field diffs%s%s; %ld minute diffs; schema pin %s)",
+      const bool ok = fd_.fields == 0 && mins == 0 && L.schema == alphabet_hash() && L.ver == REC_VER;
+      snprintf(buf, sizeof buf, "(%zu cells folded from %zu rows; %ld field diffs%s%s; %ld minute diffs; alphabet pin %s)",
                L.ob.size(), A.tape.size(), fd_.fields, fd_.fields ? ", first: " : "", fd_.fields ? fd_.first : "",
-               mins, L.schema == schema_hash() ? "matches" : "DIFFERS");
-      ck(LIE == 15 ? !ok : ok, "O14  the ledger is a fold of the tape: cold fold == live world", buf);
+               mins, L.schema == alphabet_hash() ? "matches" : "DIFFERS");
+      ck(LIE == 15 ? !ok : ok, "O14  the ledger folds from the tape: cold fold == live world (a verified shadow; no consumer reads it yet)", buf);
+    }
+    // --- O29: ROW-SHAPE CONFORMANCE. One scan of the tape; per type, the fields
+    //          the v2 table says are populated must be populated. This is the
+    //          oracle that catches table drift for the rest of the programme.
+    //          The lie is an ARRIVE written with no due day.
+    {
+      long bad = 0, n = 0; char first[120] = {0}; long headers = 0;
+      auto shape_fail = [&](const Rec& r, const char* why) { if (bad++ == 0) snprintf(first, sizeof first, "%s on %s at row %ld", why, rec_type_name(r.type), n); };
+      for (const Rec& r0 : A.tape.rec) {
+        Rec r = r0;
+        if (LIE == 17 && r.type == R_ARRIVE && n == 5) r.a = 0;                  // THE LIE
+        if (r.ver != REC_VER) shape_fail(r, "ver");
+        switch (r.type) {
+          case R_HEADER:   ++headers; if (n != 0) shape_fail(r, "HEADER not first"); if ((uint32_t)r.b != alphabet_hash()) shape_fail(r, "pin"); break;
+          case R_TICK:     if (r.seat != -3 || r.arm != ARM_GOVERNOR) shape_fail(r, "writer"); break;
+          case R_ARRIVE:   if (r.a <= 0 || (uint32_t)r.a < r.day) shape_fail(r, "day_due"); if (r.seat != -2) shape_fail(r, "seat"); break;
+          case R_ASSIGN:   if (r.seat < 0 || r.b <= 0) shape_fail(r, "seat/hops"); break;
+          case R_CONTEXT:  if (r.a < 0 || r.a > 31) shape_fail(r, "system"); break;
+          case R_ACT:      if (r.a < 0 || r.a >= ACT_N || r.value < 0.f) shape_fail(r, "kind/minutes"); break;
+          case R_DECIDE:   if (r.seat < 0 || r.arm != ARM_HUMAN || r.prov != PROV_H || r.via != 0) shape_fail(r, "decider"); break;
+          case R_PROPOSAL: if (r.seat != -1 || r.arm != ARM_MACHINE || r.prov != PROV_M || r.b == 0) shape_fail(r, "judge hash"); break;
+          case R_HOLD:     if ((r.seat >= 0 && r.prov != PROV_H) || (r.seat == -1 && r.prov != PROV_M)) shape_fail(r, "prov"); break;
+          case R_ESCALATE: if ((r.seat >= 0 && r.prov != PROV_H) || (r.seat == -1 && r.prov != PROV_M)) shape_fail(r, "prov"); break;
+          case R_EFFECT:   if (r.seat != -1 || r.arm != ARM_MACHINE || r.prov != PROV_M || r.via < 1 || r.via > 4) shape_fail(r, "via"); break;
+          case R_OUTCOME:  if (r.seat == -2 || r.a < OK_GOOD || r.a > OK_BAD || r.b != r.via || (r.arm == ARM_MACHINE) != (r.seat == -1)) shape_fail(r, "decider/kind/via"); break;
+          case R_LICENSE: case R_KAPPA: if (r.seat != -3 || r.arm != ARM_GOVERNOR) shape_fail(r, "governor"); break;
+          default: break;
+        }
+        ++n;
+      }
+      if (headers != 1) shape_fail(A.tape.rec[0], "one HEADER");
+      const bool ok = (bad == 0);
+      snprintf(buf, sizeof buf, "(%ld rows scanned, %ld shape faults%s%s)", n, bad, bad ? ", first: " : "", bad ? first : "");
+      ck(LIE == 17 ? !ok : ok, "O29  every row carries what the v2 table says it carries", buf);
     }
     // --- O15: THE LADDER IS A FOLD. Every licence's counts rebuilt from OUTCOME
     //          rows alone, from the resident's first period, must equal the live
@@ -649,7 +683,7 @@ static int cmd_selftest(const Args& a) {
   {
     Run R; R.f = build_acme(300, 7, 11); R.w = make_world(11); R.w.demand_scale = 1.5f;
     run_human(R, 80);
-    Compiled C = compile_from_tape(R.tape, R.hs.by_class.data(), R.w.NC, 11, true);
+    Compiled C = compile_from_tape(R.tape, R.w.NC, 11, true);
     if (LIE == 6) C.join_graph[3] = 1u;                            // THE LIE
     // The oracle reads the join graph itself, not the count cached beside it:
     // the first run planted the lie in join_graph while the check read
@@ -668,7 +702,7 @@ static int cmd_selftest(const Args& a) {
   {
     Run R; R.f = build_acme(300, 7, 13); R.w = make_world(13); R.w.demand_scale = 1.5f;
     run_human(R, 150);
-    Compiled C = compile_from_tape(R.tape, R.hs.by_class.data(), R.w.NC, 13, true);
+    Compiled C = compile_from_tape(R.tape, R.w.NC, 13, true);
     Field fd; fd.init(R.w.NC, R.f.size(), 13); Ladder lad; lad.init(R.w.NC);
     // THE LIE: a world that never says wrong. The estimator reads coverage off
     // the world's verdicts on the agreement diagonal, so a grader that always
@@ -695,7 +729,7 @@ static int cmd_selftest(const Args& a) {
   {
     Run R; R.f = build_acme(250, 7, 17); R.w = make_world(17); R.w.demand_scale = 1.5f;
     run_human(R, 120);
-    Compiled C = compile_from_tape(R.tape, R.hs.by_class.data(), R.w.NC, 17, true);
+    Compiled C = compile_from_tape(R.tape, R.w.NC, 17, true);
     Field fd; fd.init(R.w.NC, R.f.size(), 17); Ladder lad; lad.init(R.w.NC);
     ReplayOut RP = replay(R.w, R.f, fd, C, lad, R.f.writ);
     long dfb = 0; for (int c = 0; c < R.w.NC; ++c) dfb += RP.disagree_firm_bad[c];
@@ -715,7 +749,7 @@ static int cmd_selftest(const Args& a) {
   {
     Run R; R.f = build_acme(260, 7, 19); R.w = make_world(19); R.w.demand_scale = 1.7f;
     run_human(R, 320);
-    Compiled C = compile_from_tape(R.tape, R.hs.by_class.data(), R.w.NC, 19, true);
+    Compiled C = compile_from_tape(R.tape, R.w.NC, 19, true);
     Resident res; res.init(R.w, R.f, C, R.f.writ, 19);
     // seed the estimator the way the resident does: train the head on arrivals
     // first, then read the seat as what the head could not explain
@@ -812,7 +846,7 @@ static int cmd_selftest(const Args& a) {
   {
     Run R; R.f = build_acme(300, 7, 31); R.w = make_world(31); R.w.demand_scale = 1.5f;
     run_human(R, 100);
-    Compiled C = compile_from_tape(R.tape, R.hs.by_class.data(), R.w.NC, 31, true);
+    Compiled C = compile_from_tape(R.tape, R.w.NC, 31, true);
     if (LIE == 13) for (auto& x : C.decide_frac) x = 0.25f;         // THE LIE
     // SPEARMAN, because the claim is about order. The measured level is biased
     // upward — fetch and commit scale with the number of systems, which has

@@ -58,7 +58,7 @@ CLOCK = re.compile(r"\bchrono\b|\btime\s*\(|\bclock\s*\(|\bgetenv\s*\(|\bclock_g
 
 
 def clock_reads(root):
-    """O25 · the kernel reads time only from TICK rows: no clock, no environment, in any kernel file."""
+    """O25a· the kernel reads time only from TICK rows: no clock, no environment, in any kernel file."""
     hits = []
     for rel in KERNEL:
         p = os.path.join(root, rel)
@@ -85,14 +85,14 @@ def o25(root, lie):
         hits = clock_reads(tmp)
         shutil.rmtree(tmp, ignore_errors=True)
         ok = len(hits) == 1
-        print(("  [PASS] " if ok else "  [FAIL] ") + f"O25  the kernel reads no clock: the planted clock read was {'caught' if hits else 'MISSED'}"
+        print(("  [PASS] " if ok else "  [FAIL] ") + f"O25a the kernel reads no clock: the planted clock read was {'caught' if hits else 'MISSED'}"
               + (f" ({len(hits)} hits)" if len(hits) != 1 else "") + "   (with oracle 25 lied to: PASS on its line means the lie was caught)")
         return 0 if ok else 1
     hits = clock_reads(root)
     if not hits:
-        print(f"  [PASS] O25  the kernel reads no clock: machine.h, solver.h, ledger.h, report.h read time only from TICK rows")
+        print(f"  [PASS] O25a the kernel reads no clock: machine.h, solver.h, ledger.h, report.h read time only from TICK rows")
         return 0
-    print(f"  [FAIL] O25  the kernel reads no clock: {len(hits)} clock or environment reads: " + ", ".join(hits))
+    print(f"  [FAIL] O25a the kernel reads no clock: {len(hits)} clock or environment reads: " + ", ".join(hits))
     return 1
 
 
