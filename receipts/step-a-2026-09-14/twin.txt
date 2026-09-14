@@ -1,0 +1,40 @@
+
+=== THE TWIN · TWO ACMES, ONE SEED, ONE PHYSICS ======================
+  Same arrivals, same determinants, same luck on every obligation id. The only
+  difference is who decides. A real firm cannot run this comparison — its canary
+  and its control share one ledger, and the humans see what the machine did and
+  best-respond to it. A twin can, and the most useful thing it prints is not
+  which arm won. It is HOW WRONG THE CANARY ESTIMATE WOULD HAVE BEEN.
+
+                                      incumbent       resident        delta
+  obligations settled                     82479         186956       104477
+  good outcomes  %                        42.70          38.34        -4.36
+  wrong outcomes %                         8.40          11.89         3.49
+  late outcomes  %                        48.90          49.77         0.86
+  deadline breaches %                     54.17          57.62         3.46
+  mean cycle, days                        51.94          57.99         6.05
+  writ cost of outcomes, $M              236.73         827.68       590.95
+  backlog at w_unplaced, $M             1600.98         420.27     -1180.71
+  TOTAL cost, $M                        1837.71        1247.95      -589.76
+  human minutes, thousands                24518          23325        -1193
+  still open at the end                  123927          19450      -104477
+
+=== THE NUMBER A REAL PROGRAMME CANNOT GET ============================
+  true effect, paired arms            -4.36 points of good-outcome rate (total cost delta $-589.8M)
+  within-firm canary estimate        +27.37  (unattended acts 12122 vs human-decided 78871 in the same firm)
+  assisted, not in the estimate     95963 drafts and warrants a person executed, 26.0% good
+  BIAS OF THE ESTIMATOR              +31.73
+
+  The canary is not measuring the same thing as the twin, and the gap is not
+  noise. Two mechanisms drive it and both grow with the canary rate: the machine
+  is routed the cases it was licensed for, which is selection; and the humans in
+  the same firm are working a queue the machine already drained, which is
+  interference. So r has an interior optimum, not just the floor n0/V that the
+  identifiability arithmetic gives. Raise r to clear n0 faster and you contaminate
+  the comparison; lower it to protect the comparison and you never clear n0.
+
+  Budget for a bias of about this size in any real programme. It is the term the
+  three single-way documents all left out, and a simulation is the only place it
+  can be measured at all.
+
+  both arms in 42.0 s.

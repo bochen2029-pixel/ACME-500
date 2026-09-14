@@ -34,9 +34,22 @@ set(LIE_LINE_1 "O1")  set(LIE_LINE_2 "O2")   set(LIE_LINE_3 "O3")   set(LIE_LINE
 set(LIE_LINE_5 "O5")  set(LIE_LINE_6 "O6")   set(LIE_LINE_7 "O7")   set(LIE_LINE_8 "O8")
 set(LIE_LINE_9 "O9")  set(LIE_LINE_10 "O10") set(LIE_LINE_11 "O11") set(LIE_LINE_12 "O12")
 set(LIE_LINE_13 "O13")
-foreach(N RANGE 0 13)
+set(LIE_LINE_14 "O1b")   # lie 14 = O1b, determinism over the machine arm (REV 2 spec S0)
+foreach(N RANGE 0 14)
   add_test(NAME lie_${N} COMMAND acme --selftest --lie ${N})
   set_tests_properties(lie_${N} PROPERTIES
     PASS_REGULAR_EXPRESSION "\\[PASS\\] ${LIE_LINE_${N}} "
     FAIL_REGULAR_EXPRESSION "\\[FAIL\\]")
 endforeach()
+
+# O28 · no dead physics. A function defined in firm.h or world.h with no caller
+# anywhere is a documented mechanism that does not run (F15). The tool lists
+# them; the list must be empty. Its lie plants an uncalled function in a scratch
+# copy and the tool must be seen to catch it.
+find_package(Python3 COMPONENTS Interpreter)
+if(Python3_Interpreter_FOUND)
+  add_test(NAME dead_symbols     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/dead_symbols.py ${CMAKE_SOURCE_DIR})
+  add_test(NAME dead_symbols_lie COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/dead_symbols.py ${CMAKE_SOURCE_DIR} --lie)
+  set_tests_properties(dead_symbols     PROPERTIES PASS_REGULAR_EXPRESSION "\\[PASS\\] O28 " FAIL_REGULAR_EXPRESSION "\\[FAIL\\]")
+  set_tests_properties(dead_symbols_lie PROPERTIES PASS_REGULAR_EXPRESSION "\\[PASS\\] O28 " FAIL_REGULAR_EXPRESSION "\\[FAIL\\]")
+endif()

@@ -4,7 +4,7 @@ ACME-500 is a virtual enterprise of 500 knowledge workers and its automation in 
 
 Rules that bind here:
 - Build with `g++ -O2 -std=c++17 -Iinclude -Wall -Wextra -ffp-contract=off src/main.cpp -o acme` or with CMake. No fast-math, no reassociation: determinism is a property the battery tests for.
-- Reproduce the battery before editing: 16 of 16, and every `--lie N` run exiting 0 with oracle N's own line reading PASS.
+- Reproduce the battery before editing: 17 of 17 in `--selftest`, every `--lie N` run (0 to 14; 14 is O1b) exiting 0 with the lied-to oracle's own line reading PASS, and `python tools/dead_symbols.py .` PASS on both arms (O28). The REV 2 spec in `docs/SPEC-AMENDMENTS_REV2_ONE-PORT-FOUR-WORLDS.md` is the standing kickoff; its §0 is the regression baseline, and `receipts/RECEIPT_ACME500_STEP-A_2026-09-14.md` is the last step landed.
 - A lie arm counts only when the lied-to oracle is seen to catch its lie. A nonzero exit for an unrelated reason is not a caught lie.
 - Never report a process as running without its PID and CPU time against wall time. Never report green without the lie.
 - The physics in `firm.h` and `world.h` is not under review. Do not tune a constant to pass an oracle.

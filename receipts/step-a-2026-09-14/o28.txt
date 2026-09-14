@@ -1,0 +1,2 @@
+  [PASS] O28  no dead physics: every free function in firm.h/world.h has a caller (13 functions)
+  [PASS] O28  no dead physics: the planted orphan was caught, and nothing else is dead   (with oracle 28 lied to: PASS on its line means the lie was caught)

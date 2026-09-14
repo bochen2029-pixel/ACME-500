@@ -487,6 +487,39 @@ static int cmd_selftest(const Args& a) {
     ck(LIE == 1 ? !same : same, "O1   same seed produces a byte-identical tape", buf);
   }
 
+  // --- O1b: determinism over the MACHINE arm. O1 ran the human arm only and
+  // compared rec without chain (F20, the REV 2 spec S0): the resident had never
+  // been under a determinism oracle, and every fold-to-identity oracle that
+  // follows needs this baseline. Two runs, one seed: the tape, the chain and
+  // the licence table must all be byte-identical.
+  {
+    Args aa = a; aa.n = 200; aa.span = 7; aa.seed = 7; aa.warm = 40; aa.days = 70; aa.demand = 1.5f; aa.lie = -1;
+    Run A; A.f = build_acme(200, 7, 7); A.w = make_world(7); A.w.demand_scale = 1.5f;
+    Run B; B.f = build_acme(200, 7, 7); B.w = make_world(7); B.w.demand_scale = 1.5f;
+    const AutoOut oa = run_machine(aa, A, aa.warm, aa.days, false);
+    const AutoOut ob = run_machine(aa, B, aa.warm, aa.days, false);
+    if (LIE == 14) {                                               // THE LIE: a resident that read the clock
+      const long long t = (long long)std::chrono::steady_clock::now().time_since_epoch().count();
+      for (Rec& r : B.tape.rec) if (r.type == R_EFFECT) { r.margin += 1e-6f * (float)(1 + (t % 7)); break; }
+    }
+    const bool same_rec   = A.tape.size() == B.tape.size()
+                         && memcmp(A.tape.rec.data(), B.tape.rec.data(), A.tape.size() * sizeof(Rec)) == 0;
+    const bool same_chain = A.tape.chain.size() == B.tape.chain.size()
+                         && memcmp(A.tape.chain.data(), B.tape.chain.data(), A.tape.chain.size()) == 0;
+    bool same_lad = oa.lad.lic.size() == ob.lad.lic.size();
+    for (size_t i = 0; same_lad && i < oa.lad.lic.size(); ++i) {
+      const Lic& x = oa.lad.lic[i]; const Lic& y = ob.lad.lic[i];
+      same_lad = x.rung == y.rung && x.expiry_day == y.expiry_day && x.logE == y.logE && x.logE_demote == y.logE_demote
+              && x.n_machine == y.n_machine && x.n_incumbent == y.n_incumbent && x.n_assisted == y.n_assisted
+              && x.good_machine == y.good_machine && x.good_incumbent == y.good_incumbent && x.good_assisted == y.good_assisted
+              && x.history_licensed == y.history_licensed && x.unlicensable == y.unlicensable && x.n0 == y.n0;
+    }
+    const bool same = same_rec && same_chain && same_lad;
+    snprintf(buf, sizeof buf, "(%zu rows; rec %s, chain %s, licence table %s)", A.tape.size(),
+             same_rec ? "same" : "DIFF", same_chain ? "same" : "DIFF", same_lad ? "same" : "DIFF");
+    ck(LIE == 14 ? !same : same, "O1b  same seed produces a byte-identical MACHINE arm: tape, chain, licence table", buf);
+  }
+
   // --- O2: the gate can never widen. Exhaustive over the input lattice.
   {
     Writ wr; bool ok = true; long acts = 0, cases = 0;

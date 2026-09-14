@@ -2,7 +2,7 @@
 
 **A virtual enterprise of 500 knowledge workers, and its automation, in one C++17 binary with no dependencies. It exists so that a method for automating organizations can be graded by a world that answers in seconds instead of quarters, and can fail cheaply before any real firm is asked to be the grader.**
 
-3,180 lines. Five modes. Sixteen oracles, each carrying a lie that it must be seen to catch. Every number it prints is a reading, and the readings that turned out wrong are printed as retractions in the receipts.
+3,269 lines. Five modes. Seventeen oracles in the binary and one on the source tree, each carrying a lie that it must be seen to catch. Every number it prints is a reading, and the readings that turned out wrong are printed as retractions in the receipts.
 
 ```
 g++ -O2 -std=c++17 -Iinclude -Wall -Wextra -ffp-contract=off src/main.cpp -o acme
@@ -77,12 +77,14 @@ Every oracle carries a lie. Under `--lie N` the mechanism oracle N claims to tes
 | O11 | effects carry inverses; the window closes at settlement | PASS |
 | O12 | the origin-fit cascade promises an impossible company | PASS |
 | O13 | the measured decide fraction ranks the planted intensity | PASS, partial Spearman 0.963 |
+| O1b | same seed, byte-identical **machine** arm: tape, chain and licence table (`--lie 14`) | PASS, 285,623 rows |
+| O28 | no free function in `firm.h`/`world.h` without a caller (`tools/dead_symbols.py`, its own `--lie`) | PASS, 13 functions |
 
 ## How it is built
 
 - **The tape is the only truth.** Append-only, BLAKE2b-chained, fixed-width records; every table is a fold over it. A hold is a row, because an organization fails by omission and an omission that leaves no trace cannot be graded. The interior, the meeting, the deck, the ticket, is recorded only so it can be priced and deleted.
 - **The RNG is stateless.** Counter-based, keyed on seed, stream and index, so two arms of a twin get the same arrivals, determinants and luck on every obligation id.
-- **One dynamics source.** The goodness of a decision is defined in one function that both arms call. It does not take "human or machine"; a decider is a competence and a completeness. The load-bearing variable is completeness: who can assemble the context, at what cost, at what rate.
+- **One read function, one grader.** The correct decision is the sign of the full weighted sum over a class's determinants. A decider, human or machine, sums only the determinants it gathered, plus noise scaled by the class's judgement intensity and its own competence, through one `observe()` with different masks; the world settles the outcome by comparing the decision to that truth and the day to the due day, without knowing who decided. The load-bearing variable is completeness, through which determinants get summed: who can assemble the context, at what cost, at what rate. (An earlier "quality curve" described here until 2026-09-14 had no caller and was deleted; finding F15.)
 - **Determinants live somewhere.** In a system of record behind an application, in the inbound document, or nowhere. Coverage of a class is one minus its tacit mass, and it is a property of instrumentation, which is buyable, not of the model.
 - **Two graders with disjoint support.** History grades the band where the machine's choice was the firm's, with zero latency; the world grades the rest, one term late, through the canary. The fourth cell of the table, where the machine disagreed and the firm failed, is refused: the machine's alternative was never run.
 - **The gate contains nothing learned.** Five verdicts, a published order of refusal, budget checked last so that running out of supervision produces a hold and never an act. Direction, sharpness and novelty are three numbers, not entropy.
@@ -129,7 +131,7 @@ The director cuts on the phase boundaries in `phases.json` and on nothing else. 
 ```
 src/main.cpp              five modes and the oracle battery
 include/acme/core.h       the RNG, fixed-point accumulators, BLAKE2b, the tape, the schema
-include/acme/firm.h       the cone from the span, the α/E split, skills, the writ, the one dynamics source
+include/acme/firm.h       the cone from the span, the α/E split, skills, the writ, the outcome vocabulary and its price
 include/acme/world.h      determinants and where they live, arrivals, the read, the exogenous grader
 include/acme/human.h      the five acts, the glue, the derived meeting calendar, escalation
 include/acme/solver.h     the field, log-domain Sinkhorn with finite stocks, the gate, the hand

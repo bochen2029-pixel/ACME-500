@@ -46,10 +46,6 @@ enum SeatKind : uint8_t {
   SK_CSUITE,        // the writ, and the signatures the law reserves
   SK_N
 };
-inline const char* seat_kind_name(int k) {
-  static const char* n[] = { "IC", "lead", "manager", "director", "VP", "C-suite" };
-  return (k >= 0 && k < SK_N) ? n[k] : "?";
-}
 
 // Why a seat exists. This is the tag the α/E regression must recover from
 // payroll and the order book WITHOUT being told.
@@ -265,49 +261,32 @@ inline Firm build_acme(int target_n = 500, int span = 7, uint64_t seed = 2026091
 }
 
 // ----------------------------------------------------------------------------
-// THE ONE DYNAMICS SOURCE
+// WHERE THE PHYSICS LIVES (and what used to be here)
 //
-// Everything that decides how good a decision was goes through here. Note what
-// it does NOT take: it does not take "is this a human or a machine". A decider
-// is a competence and a completeness, and that is all the physics knows.
+// Until 2026-09-14 this section carried `Decider`, `p_good` and
+// `realize_outcome`: a stochastic quality curve described as "the one dynamics
+// source both arms call". No code called it. The 09-13 refactor that gave a
+// decision real content replaced it and left it standing, and the documents
+// kept describing the curve. It is deleted (finding F15, the REV 2 spec §5
+// S10b) rather than resurrected, because the physics the outcomes actually
+// come from is better and is in world.h:
+//
+//   full_signal / truth_decision  the correct decision is the sign of the full
+//                                 weighted sum over the class's determinants;
+//   observe                       a decider sums only the determinants it
+//                                 gathered, plus noise scaled by the class's
+//                                 judgement intensity and its own competence,
+//                                 and BOTH arms read through this one function
+//                                 with different masks;
+//   world_settle                  the exogenous grader: right = the decision
+//                                 equals the truth, on time = decided by the
+//                                 due day. It does not know who decided.
+//
+// Completeness is still the load-bearing variable, through WHICH determinants
+// get summed, not through a curve. What stays here is the outcome vocabulary
+// and the writ's price of an outcome.
 // ----------------------------------------------------------------------------
-struct Decider {
-  float competence;     // skill at this class, [0,1]
-  float completeness;   // fraction of the class's determinants actually in hand
-  float fatigue;        // [0,1]; humans only, but the physics does not care why
-};
-
-// P(good | class, decider). Completeness is the load-bearing term by design:
-// at completeness 1.0 even a mediocre decider is close to ceiling, and at
-// completeness 0.4 a brilliant one is not. That is the whole thesis, expressed
-// as a curve rather than an assertion, and it is what the sim lets you falsify.
-inline float p_good(const ClassSpec& s, const Decider& d) {
-  const float ceiling = 1.0f - s.base_rate;
-  // the judgement term only bites in proportion to how much of the class is judgement
-  const float judged  = 0.35f + 0.65f * d.competence;
-  const float ctx     = std::pow(std::max(0.02f, d.completeness), 0.70f + 1.30f * s.decide_frac);
-  const float tired   = 1.0f - 0.35f * d.fatigue;
-  return std::min(0.995f, std::max(0.01f, ceiling * ctx * (1.0f - s.decide_frac + s.decide_frac * judged) * tired));
-}
-
 enum OutcomeKind : uint8_t { OK_NONE = 0, OK_GOOD, OK_LATE, OK_BAD, OK_N };
-inline const char* outcome_name(int o) { static const char* n[] = {"none","good","late","bad"}; return n[o & 3]; }
-
-// The world's verdict. Exogenous: nothing inside the firm writes this, and the
-// draw is keyed on the obligation id alone, so the same obligation decided the
-// same way by either arm gets the same luck. That is what makes the paired
-// comparison in §THE TWIN a clean counterfactual instead of two noisy samples.
-inline int realize_outcome(const ClassSpec& s, const Decider& d, bool on_time,
-                           uint64_t seed, uint64_t oid) {
-  const float pg = p_good(s, d);
-  const float u  = u01(seed, 0x0BADCAFEULL, oid);
-  if (!on_time) return (u < 0.72f) ? OK_LATE : OK_BAD;
-  if (u < pg) return OK_GOOD;
-  // the remainder splits between merely late and actually wrong, and the split
-  // is class-specific: a mispriced quote is bad, a slow chaser is late
-  const float split = 0.35f + 0.45f * s.decide_frac;
-  return (u01(seed, 0x0BADD00DULL, oid) < split) ? OK_BAD : OK_LATE;
-}
 
 // The writ's cost of a landed outcome. One cost source; both arms are scored
 // with it and nothing else.

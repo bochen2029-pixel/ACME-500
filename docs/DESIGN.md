@@ -293,7 +293,10 @@ neither has been done.
 include/acme/core.h      331   counter RNG, fixed-point accumulators, BLAKE2b,
                                the hash-chained tape, the schema (6 wires, 24 classes)
 include/acme/firm.h      310   the cone from the span, α/E/warrant tagging, skills,
-                               specialisation, the writ, THE ONE DYNAMICS SOURCE
+                               specialisation, the writ, the outcome vocabulary and its
+                               price (the "one dynamics source" that stood here until
+                               2026-09-14 had no caller and was deleted: F15; the physics
+                               is world.h's observe / truth_decision / world_settle)
 include/acme/world.h     299   determinants and where they live, arrivals, the read,
                                context decay, the exogenous grader
 include/acme/human.h     371   the five acts, the glue, the derived meeting calendar,
