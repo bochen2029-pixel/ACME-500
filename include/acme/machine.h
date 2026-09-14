@@ -559,6 +559,29 @@ inline void Resident::period(World& w, Firm& f, Tape& tape, uint32_t day) {
   lad.step(day, wr, tape);
 }
 
+// O15 · THE LADDER IS A FOLD. Rebuild every licence's evidence counts and both
+// e-processes from OUTCOME rows alone, in tape order, from the day the resident
+// first graded, and compare to the live ladder. The rows carry the band and the
+// via, so nothing else is joined. [v2, step B3]
+inline Ladder fold_ladder(const Tape& tape, int NC, uint32_t from_day) {
+  Ladder L; L.init(NC);
+  tape.fold([&](const Rec& r) {
+    if (r.type != R_OUTCOME || r.day < from_day || r.cls >= NC) return;
+    L.observe(r.cls, r.band, (int)r.via, r.a == OK_GOOD, L.p_incumbent(r.cls, r.band));
+  });
+  return L;
+}
+inline long ladder_diff(const Ladder& a, const Ladder& b) {
+  long bad = 0;
+  for (size_t i = 0; i < a.lic.size() && i < b.lic.size(); ++i) {
+    const Lic& x = a.lic[i]; const Lic& y = b.lic[i];
+    if (x.n_machine != y.n_machine || x.good_machine != y.good_machine) ++bad;
+    if (x.n_incumbent != y.n_incumbent || x.good_incumbent != y.good_incumbent) ++bad;
+    if (x.n_assisted != y.n_assisted || x.good_assisted != y.good_assisted) ++bad;
+  }
+  return bad + (long)(a.lic.size() != b.lic.size());
+}
+
 // Outcomes arrive. This is the only place a licence can widen.
 inline void Resident::grade(World& w, const Firm& f, Tape& tape, uint32_t day) {
   (void)f; (void)tape;

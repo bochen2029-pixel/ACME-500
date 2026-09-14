@@ -35,7 +35,9 @@ set(LIE_LINE_5 "O5")  set(LIE_LINE_6 "O6")   set(LIE_LINE_7 "O7")   set(LIE_LINE
 set(LIE_LINE_9 "O9")  set(LIE_LINE_10 "O10") set(LIE_LINE_11 "O11") set(LIE_LINE_12 "O12")
 set(LIE_LINE_13 "O13")
 set(LIE_LINE_14 "O1b")   # lie 14 = O1b, determinism over the machine arm (REV 2 spec S0)
-foreach(N RANGE 0 14)
+set(LIE_LINE_15 "O14")   # lie 15 = O14, fold-to-identity (a field set without a row)
+set(LIE_LINE_16 "O15")   # lie 16 = O15, the ladder is a fold (an outcome counted twice)
+foreach(N RANGE 0 16)
   add_test(NAME lie_${N} COMMAND acme --selftest --lie ${N})
   set_tests_properties(lie_${N} PROPERTIES
     PASS_REGULAR_EXPRESSION "\\[PASS\\] ${LIE_LINE_${N}} "
@@ -52,4 +54,9 @@ if(Python3_Interpreter_FOUND)
   add_test(NAME dead_symbols_lie COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/dead_symbols.py ${CMAKE_SOURCE_DIR} --lie)
   set_tests_properties(dead_symbols     PROPERTIES PASS_REGULAR_EXPRESSION "\\[PASS\\] O28 " FAIL_REGULAR_EXPRESSION "\\[FAIL\\]")
   set_tests_properties(dead_symbols_lie PROPERTIES PASS_REGULAR_EXPRESSION "\\[PASS\\] O28 " FAIL_REGULAR_EXPRESSION "\\[FAIL\\]")
+  # O25 · the kernel reads no clock: the machine's files read time only from TICK rows.
+  add_test(NAME no_clock     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/dead_symbols.py ${CMAKE_SOURCE_DIR} --o25)
+  add_test(NAME no_clock_lie COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/dead_symbols.py ${CMAKE_SOURCE_DIR} --o25 --lie)
+  set_tests_properties(no_clock     PROPERTIES PASS_REGULAR_EXPRESSION "\\[PASS\\] O25 " FAIL_REGULAR_EXPRESSION "\\[FAIL\\]")
+  set_tests_properties(no_clock_lie PROPERTIES PASS_REGULAR_EXPRESSION "\\[PASS\\] O25 " FAIL_REGULAR_EXPRESSION "\\[FAIL\\]")
 endif()

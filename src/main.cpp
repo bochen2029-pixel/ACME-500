@@ -29,6 +29,7 @@
 #include "acme/human.h"
 #include "acme/solver.h"
 #include "acme/machine.h"
+#include "acme/ledger.h"
 #include "acme/report.h"
 #include <cstdio>
 #include <cstring>
@@ -537,6 +538,32 @@ static int cmd_selftest(const Args& a) {
     snprintf(buf, sizeof buf, "(%zu rows; rec %s, chain %s, licence table %s)", A.tape.size(),
              same_rec ? "same" : "DIFF", same_chain ? "same" : "DIFF", same_lad ? "same" : "DIFF");
     ck(LIE == 14 ? !same : same, "O1b  same seed produces a byte-identical MACHINE arm: tape, chain, licence table", buf);
+
+    // --- O14: FOLD-TO-IDENTITY. The cold fold of A's tape must equal A's live
+    //          world field by field, the open set included, and the folded minute
+    //          meter must equal the live one. The lie is a struct field set with
+    //          no row: exactly the defect the v1 program had everywhere.
+    {
+      if (LIE == 15) A.w.ob[A.w.ob.size() / 2].hops += 1;                  // THE LIE
+      const Ledger L = Ledger::fold(A.tape, A.w.NC);
+      const FoldDiff fd_ = ledger_diff(L, A.w);
+      const long mins = minutes_diff(L, A.hs, A.w.NC);
+      const bool ok = fd_.fields == 0 && mins == 0 && L.schema == schema_hash() && L.ver == REC_VER;
+      snprintf(buf, sizeof buf, "(%zu cells folded from %zu rows; %ld field diffs%s%s; %ld minute diffs; schema pin %s)",
+               L.ob.size(), A.tape.size(), fd_.fields, fd_.fields ? ", first: " : "", fd_.fields ? fd_.first : "",
+               mins, L.schema == schema_hash() ? "matches" : "DIFFERS");
+      ck(LIE == 15 ? !ok : ok, "O14  the ledger is a fold of the tape: cold fold == live world", buf);
+    }
+    // --- O15: THE LADDER IS A FOLD. Every licence's counts rebuilt from OUTCOME
+    //          rows alone, from the resident's first period, must equal the live
+    //          ladder's. The lie is an outcome counted twice.
+    {
+      Ladder LF = fold_ladder(A.tape, A.w.NC, (uint32_t)aa.warm);
+      if (LIE == 16) LF.at(0, 2).n_machine += 1;                            // THE LIE
+      const long bad = ladder_diff(LF, oa.lad);
+      snprintf(buf, sizeof buf, "(%zu class-bands; %ld count diffs against the live ladder)", LF.lic.size(), bad);
+      ck(LIE == 16 ? !(bad == 0) : (bad == 0), "O15  the ladder is a fold of OUTCOME rows: counts rebuilt == live", buf);
+    }
   }
 
   // --- O2: the gate can never widen. Exhaustive over the input lattice.

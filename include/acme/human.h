@@ -184,11 +184,12 @@ inline WorkResult human_work(World& w, Firm& f, Tape& tape, HumanStats& st,
   // fraction of work that exists purely because the next reader is human.
   // A day that ends mid-case is a row (HOLD, reason 3: in progress), so the fold
   // can carry the case's state and its last touch without a struct.
+  // (value = the completeness in hand, so the fold carries what the reader held)
   auto in_progress = [&]() { o.state = OB_INPROG; res.progressed = true;
-    tape.put(R_HOLD, day, o.id, o.cls, seat_id, ARM_HUMAN, 3, 0, o.margin, 0.f, 0, 0, 0, PROV_H); return res; };
+    tape.put(R_HOLD, day, o.id, o.cls, seat_id, ARM_HUMAN, 3, 0, o.margin, o.completeness, 0, 0, 0, PROV_H); return res; };
   const float frame_m = 6.0f + 26.0f * sp.decide_frac + 3.0f * (float)o.hops;
   if (s.attn_left - res.minutes < frame_m) return in_progress();
-  TL.frame.add(frame_m); CL.frame.add(frame_m); res.minutes += frame_m; act(ACT_FRAME, frame_m);
+  TL.frame.add(frame_m); CL.frame.add(frame_m); res.minutes += frame_m; act(ACT_FRAME, frame_m, o.completeness);
 
   // --- DECIDE. The job. A contested claim is not a fifteen-minute affair, and
   // the fact that it spans days is exactly why context decays and why the

@@ -345,7 +345,9 @@ struct Integrator {
       if (o.id != e.oid) continue;
       if (o.state == OB_SETTLED) return false;            // the world already reacted
       o.state = e.prev_state; o.seat = e.prev_seat; o.day_decided = e.prev_decided; o.by_machine = 0; o.via = 0;
-      tape.put(R_UNDO, day, o.id, o.cls, -1, ARM_MACHINE, e.decision, (int)e.prev_state, 0.f, 0.f, 0, 0, 0, PROV_M);
+      // the row carries everything the inverse restores: prev_state (b), prev_seat (margin), prev_decided (value)
+      tape.put(R_UNDO, day, o.id, o.cls, -1, ARM_MACHINE, e.decision, (int)e.prev_state,
+               (float)e.prev_seat, (float)e.prev_decided, 0, 0, 0, PROV_M);
       ++n_undone; return true;
     }
     return false;

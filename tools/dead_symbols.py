@@ -53,10 +53,55 @@ def dead(root):
     return result
 
 
+KERNEL = ["include/acme/machine.h", "include/acme/solver.h", "include/acme/ledger.h", "include/acme/report.h"]
+CLOCK = re.compile(r"\bchrono\b|\btime\s*\(|\bclock\s*\(|\bgetenv\s*\(|\bclock_gettime\b|\bgettimeofday\b")
+
+
+def clock_reads(root):
+    """O25 · the kernel reads time only from TICK rows: no clock, no environment, in any kernel file."""
+    hits = []
+    for rel in KERNEL:
+        p = os.path.join(root, rel)
+        if not os.path.exists(p):
+            continue
+        for ln, line in enumerate(open(p, encoding="utf-8").read().splitlines(), 1):
+            code = line.split("//", 1)[0]
+            if CLOCK.search(code):
+                hits.append(f"{rel}:{ln}")
+    return hits
+
+
+def o25(root, lie):
+    if lie:
+        tmp = tempfile.mkdtemp(prefix="acme_o25_")
+        for rel in KERNEL:
+            src = os.path.join(root, rel)
+            if not os.path.exists(src):
+                continue
+            dst = os.path.join(tmp, rel); os.makedirs(os.path.dirname(dst), exist_ok=True)
+            shutil.copyfile(src, dst)
+        with open(os.path.join(tmp, "include/acme/machine.h"), "a", encoding="utf-8") as f:
+            f.write("\ninline long acme_planted_clock() { return (long)std::chrono::steady_clock::now().time_since_epoch().count(); }   // THE LIE\n")
+        hits = clock_reads(tmp)
+        shutil.rmtree(tmp, ignore_errors=True)
+        ok = len(hits) == 1
+        print(("  [PASS] " if ok else "  [FAIL] ") + f"O25  the kernel reads no clock: the planted clock read was {'caught' if hits else 'MISSED'}"
+              + (f" ({len(hits)} hits)" if len(hits) != 1 else "") + "   (with oracle 25 lied to: PASS on its line means the lie was caught)")
+        return 0 if ok else 1
+    hits = clock_reads(root)
+    if not hits:
+        print(f"  [PASS] O25  the kernel reads no clock: machine.h, solver.h, ledger.h, report.h read time only from TICK rows")
+        return 0
+    print(f"  [FAIL] O25  the kernel reads no clock: {len(hits)} clock or environment reads: " + ", ".join(hits))
+    return 1
+
+
 def main():
     if len(sys.argv) < 2:
-        print("usage: dead_symbols.py <repo root> [--lie]"); return 2
+        print("usage: dead_symbols.py <repo root> [--lie] [--o25 [--lie]]"); return 2
     root = sys.argv[1]; lie = "--lie" in sys.argv
+    if "--o25" in sys.argv:
+        return o25(root, lie)
     if lie:
         tmp = tempfile.mkdtemp(prefix="acme_o28_")
         for rel in SOURCES:
