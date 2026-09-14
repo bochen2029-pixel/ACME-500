@@ -9,6 +9,14 @@ g++ -O2 -std=c++17 -Iinclude -Wall -Wextra -ffp-contract=off src/main.cpp -o acm
 ./acme --selftest
 ```
 
+![ACME-500 at the CASCADE phase: the headquarters with its department floors, the executive floor under the sign, the annex at left, the dock with outcome marks, the ledger skyline, and the resident's basement](observer/shots/08-CASCADE.png)
+
+*The observer at day 59 of the golden, phase CASCADE. Every desk lamp, token, tray, glass room and darkened floor is driven by a row on the tape; nothing is animated on its own.*
+
+![A department floor: pods of desks with the lead at the head, glass offices on the window wall, the lift core, the ceiling strips](observer/shots/cam-WING.png)
+
+*One department floor. Pods of eight with the lead at the head, managers in glass offices on the window wall, tokens on the desks sized by value, trays stacking the holds.*
+
 ## Why it exists
 
 An organization is treated here as a function from events to effects that was implemented in people because people were the only substrate that could hold context. The method that automates it ([docs/METHOD_TWO-GRADERS-TWO-BANDS.md](docs/METHOD_TWO-GRADERS-TWO-BANDS.md)) compiles the firm's decision classes from its own applications, replays its settled history to license the band where the machine's choice was the firm's, runs canaries on every class at the identifiability floor to license the rest, climbs a ladder on arrived outcomes only, and lets the middle of the org chart leave by arithmetic. Every step in that sentence is a claim, and a real firm grades claims at the pace the world answers: a chaser in days, an invoice in a quarter, a hire in a year.
@@ -84,7 +92,37 @@ The full design, with the arithmetic of n₀, the ladder, the cascade fitted bot
 
 ## The observer
 
-[`observer/`](observer/) is a three.js page that folds the tape and draws the firm as a headquarters: departments as floors, pods of desks with the lead at the head, glass offices, the executive floor, the annex, the resident's basement, the dock where outcomes land. It is a pure observer of a frozen contract and runs from a golden with no backend. Its own README says what is missing and why.
+[`observer/`](observer/) is a three.js page that folds the tape and draws the firm as a headquarters: departments as floors, pods of desks with the lead at the head, glass offices, the executive floor, the annex, the resident's basement, the dock where outcomes land. It is a pure observer of a frozen contract and runs from a golden with no backend.
+
+### The eight phases, one camera
+
+The director cuts on the phase boundaries in `phases.json` and on nothing else. Day 0 to day 54 of the golden, ORBIT camera, headless.
+
+| INSTRUMENT | COMPILE | REPLAY | LICENSE |
+|---|---|---|---|
+| ![](observer/shots/01-INSTRUMENT.png) | ![](observer/shots/02-COMPILE.png) | ![](observer/shots/03-REPLAY.png) | ![](observer/shots/04-LICENSE.png) |
+| the tape is spooled; nothing is claimed | the join graph draws itself over the rack | the tower is run against its own history | rungs are issued per class and band |
+
+| CANARY | CLIMB | COMPILE_OUT | CASCADE |
+|---|---|---|---|
+| ![](observer/shots/05-CANARY.png) | ![](observer/shots/06-CLIMB.png) | ![](observer/shots/07-COMPILE_OUT.png) | ![](observer/shots/08-CASCADE.png) |
+| machine verdicts run beside live desks | licensed bands climb; floors go quiet | classes collapse into routine blocks | the annex empties; residual is what is left |
+
+### The close cameras
+
+| the dock | the basement |
+|---|---|
+| ![The dock: tokens waiting in the bay, outcome marks on the apron graded good, late and bad, the chute out](observer/shots/cam-DOCK.png) | ![The resident's basement: the license grid lit by rung, the admitted glyphs, the tape spool, the kappa gauge, the systems rack, the routine block](observer/shots/cam-BASEMENT.png) |
+| the boundary. Tokens wait in the bay; outcomes land on the apron as marks, green, amber and red, rimmed by who decided; effects leave by the chute. | the resident. The 24 × 6 license grid lit by rung, the purple glyphs where history admitted a band, the spool, the kappa gauge, the rack, and the routine block that grows as classes compile out. |
+
+| the executive floor | the annex |
+|---|---|
+| ![The roof and the executive floor, with the boardroom and the glass offices](observer/shots/cam-TOP.png) | ![The annex during the cascade, its upper floors dark, the tower lit behind it](observer/shots/cam-ANNEX.png) |
+| the top: the boardroom at the front, the offices along the back, the sign, the rooftop plant. | the α-functions in their podium, emptying floor by floor during the cascade, after the wings and never before. |
+
+![Isometric view of the whole plant](observer/shots/cam-ISO.png)
+
+*Isometric. The tower, the annex with its bridge, the dock, the ledger skyline.*
 
 ## Layout
 
