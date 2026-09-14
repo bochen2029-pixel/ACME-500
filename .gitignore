@@ -1,0 +1,19 @@
+# build outputs
+/acme
+/acme.exe
+/build/
+/out/
+*.o
+*.obj
+
+# local scratch
+*.tmp
+*.log
+/o7dbg
+/o7dbg2
+
+# editor and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

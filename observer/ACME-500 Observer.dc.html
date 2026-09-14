@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="description" content="ACME-500 pure observer — folds a tape, draws a firm.">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; padding: 0; background: #05070b; color: #e8eaf0; overflow: hidden; }
+  body { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  a { color: #b79cff; text-decoration: none; }
+  a:hover { color: #d5c6ff; }
+  canvas { display: block; }
+  div::-webkit-scrollbar { width: 8px; height: 8px; }
+  div::-webkit-scrollbar-track { background: rgba(120,140,170,0.06); }
+  div::-webkit-scrollbar-thumb { background: rgba(183,156,255,0.42); }
+  div::-webkit-scrollbar-thumb:hover { background: rgba(183,156,255,0.7); }
+  input[type=range] { -webkit-appearance: none; appearance: none; background: transparent; }
+  input[type=range]::-webkit-slider-runnable-track { height: 3px; background: #2a3544; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 11px; height: 19px; margin-top: -8px; background: #b79cff; border: 0; }
+  @keyframes titleIn { 0% { opacity: 0 } 12% { opacity: 1 } 82% { opacity: 1 } 100% { opacity: 0 } }
+  @keyframes blink { 0%, 100% { opacity: 1 } 50% { opacity: 0.35 } }
+</style>
+<script type="module">
+  const V = '0.170.0', B = 'https://esm.sh/three@' + V;
+  try {
+    const [T, oc, ec, rp, ub, op] = await Promise.all([
+      import(B),
+      import(B + '/examples/jsm/controls/OrbitControls.js'),
+      import(B + '/examples/jsm/postprocessing/EffectComposer.js'),
+      import(B + '/examples/jsm/postprocessing/RenderPass.js'),
+      import(B + '/examples/jsm/postprocessing/UnrealBloomPass.js'),
+      import(B + '/examples/jsm/postprocessing/OutputPass.js')
+    ]);
+    window.THREE = T;
+    window.__THREE_ADDONS = {
+      OrbitControls: oc.OrbitControls, EffectComposer: ec.EffectComposer, RenderPass: rp.RenderPass,
+      UnrealBloomPass: ub.UnrealBloomPass, OutputPass: op.OutputPass
+    };
+  } catch (e) { window.__THREE_ERR = String(e); }
+</script>
+<script src="acme/contract.js"></script>
+<script src="acme/world.js"></script>
+</helmet>
+<div style="position:relative;width:100%;height:100vh;background:#05070b;overflow:hidden;font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:12px;letter-spacing:0.02em">
+
+  <div ref="{{ stageRef }}" style="position:absolute;inset:0"></div>
+
+  <sc-if value="{{ titleOn }}" hint-placeholder-val="{{ true }}">
+    <div style="position:absolute;inset:0;display:grid;place-items:center;background:radial-gradient(60% 60% at 50% 45%,rgba(5,7,11,0.55),rgba(5,7,11,0.95));animation:titleIn 5.2s ease forwards;pointer-events:none;z-index:6">
+      <div style="text-align:center;max-width:720px;padding:0 32px">
+        <div style="font-family:'Instrument Serif',Georgia,serif;font-size:96px;line-height:0.95;letter-spacing:-0.02em;color:#f2f3f7">ACME&#8209;500</div>
+        <div style="margin-top:18px;font-size:13px;color:#5fe0b0;letter-spacing:0.22em">PURE OBSERVER &#183; CONTRACT v0</div>
+        <div style="margin-top:10px;font-size:12px;color:rgba(232,234,240,0.74);line-height:1.7">one firm, two hundred seats, sixty days.<br>nothing here is simulated: the tape is folded and the building reacts.</div>
+      </div>
+    </div>
+  </sc-if>
+
+  <div style="position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:flex-start;padding:14px 16px;gap:16px;pointer-events:none;z-index:4">
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <div style="display:flex;align-items:baseline;gap:10px">
+        <span style="font-size:17px;color:#5fe0b0;letter-spacing:0.14em">{{ phaseName }}</span>
+        <span style="font-size:11px;color:rgba(232,234,240,0.7)">{{ phaseNote }}</span>
+      </div>
+      <div style="font-size:11px;color:rgba(232,234,240,0.68)">{{ srcLabel }}</div>
+    </div>
+    <div style="display:flex;gap:18px;align-items:flex-start;text-align:right">
+      <div style="display:flex;flex-direction:column;gap:3px">
+        <span style="color:rgba(232,234,240,0.7)">DAY</span>
+        <span style="font-size:22px;color:#b79cff;line-height:1">{{ dayLabel }}</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:3px">
+        <span style="color:rgba(232,234,240,0.7)">ROWS/DAY</span>
+        <span style="font-size:22px;color:#b79cff;line-height:1">{{ rowsToday }}</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:3px">
+        <span style="color:rgba(232,234,240,0.7)">OPEN</span>
+        <span style="font-size:22px;color:#b79cff;line-height:1">{{ openCount }}</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:3px;align-items:flex-end">
+        <span style="color:#5fe0b0">{{ foldBadge }}</span>
+        <span style="color:#5fe0b0">{{ placeBadge }}</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="position:absolute;top:78px;bottom:104px;left:16px;width:166px;display:flex;flex-direction:column;gap:14px;z-index:5;overflow-y:auto;overflow-x:hidden;padding-right:8px">
+    <div style="background:rgba(8,11,17,0.82);border:1px solid rgba(120,140,170,0.16);padding:9px 10px;flex:0 0 auto">
+      <div style="color:rgba(232,234,240,0.7);margin-bottom:7px">CAM</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px">
+        <sc-for list="{{ camRows }}" as="c" hint-placeholder-count="9">
+          <button onClick="{{ c.go }}" style="background:rgba(183,156,255,0.07);border:1px solid rgba(183,156,255,0.22);color:#cfd3dd;font-family:inherit;font-size:10px;padding:5px 2px;cursor:pointer;letter-spacing:0.04em" style-hover="background:rgba(183,156,255,0.2)">{{ c.label }}</button>
+        </sc-for>
+      </div>
+    </div>
+    <div style="background:rgba(8,11,17,0.82);border:1px solid rgba(120,140,170,0.16);padding:9px 10px;flex:0 0 auto">
+      <div style="color:rgba(232,234,240,0.7);margin-bottom:7px">LAYER</div>
+      <div style="display:flex;flex-direction:column;gap:3px">
+        <sc-for list="{{ layerRows }}" as="l" hint-placeholder-count="8">
+          <button onClick="{{ l.go }}" style="display:flex;justify-content:space-between;background:transparent;border:0;border-bottom:1px solid rgba(120,140,170,0.1);color:#cfd3dd;font-family:inherit;font-size:10px;padding:3px 0;cursor:pointer" style-hover="color:#fff">
+            <span>{{ l.name }}</span><span>{{ l.mark }}</span>
+          </button>
+        </sc-for>
+      </div>
+    </div>
+    <div style="background:rgba(8,11,17,0.82);border:1px solid rgba(120,140,170,0.16);padding:9px 10px;flex:0 0 auto">
+      <div style="color:rgba(232,234,240,0.7);margin-bottom:7px">CUTOVER</div>
+      <div style="display:flex;flex-direction:column;gap:2px">
+        <sc-for list="{{ phaseRows }}" as="p" hint-placeholder-count="8">
+          <button onClick="{{ p.go }}" style="text-align:left;background:transparent;border:0;color:#9fb0c4;font-family:inherit;font-size:10px;padding:2px 0;cursor:pointer;letter-spacing:0.06em" style-hover="color:#5fe0b0">{{ p.label }}</button>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <div style="position:absolute;top:78px;bottom:104px;right:16px;width:224px;display:flex;flex-direction:column;gap:14px;z-index:5;overflow-y:auto;overflow-x:hidden;padding-right:8px">
+    <div style="background:rgba(8,11,17,0.82);border:1px solid rgba(95,224,176,0.22);padding:9px 10px;flex:0 0 auto">
+      <div style="color:#5fe0b0;margin-bottom:7px">MACHINE</div>
+      <div style="display:flex;flex-direction:column;gap:4px;font-size:11px">
+        <div style="display:flex;justify-content:space-between"><span style="color:rgba(232,234,240,0.72)">counter</span><span style="color:#b79cff">{{ counterTxt }}</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:rgba(232,234,240,0.72)">kappa</span><span style="color:#b79cff">{{ kappaTxt }}</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:rgba(232,234,240,0.72)">licensed</span><span style="color:#b79cff">{{ licTxt }}</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:rgba(232,234,240,0.72)">residual</span><span style="color:#b79cff">{{ residualTxt }}</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:rgba(232,234,240,0.72)">cascade</span><span style="color:#b79cff">{{ cascadeTxt }}</span></div>
+      </div>
+    </div>
+    <div style="background:rgba(8,11,17,0.82);border:1px solid rgba(183,156,255,0.22);padding:9px 10px;flex:0 0 auto">
+      <div style="color:rgba(232,234,240,0.7);margin-bottom:7px">LEDGER &#183; MINUTES</div>
+      <div style="display:flex;flex-direction:column;gap:3px;font-size:11px">
+        <sc-for list="{{ ledgerRows }}" as="r" hint-placeholder-count="8">
+          <div style="display:flex;justify-content:space-between;gap:8px">
+            <span style="color:rgba(232,234,240,0.74)">{{ r.name }}</span>
+            <span style="color:#b79cff">{{ r.val }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    <div style="background:rgba(8,11,17,0.82);border:1px solid rgba(120,140,170,0.16);padding:9px 10px;flex:0 0 auto;min-height:128px">
+      <div style="color:rgba(232,234,240,0.7);margin-bottom:7px">{{ selTitle }}</div>
+      <div style="font-size:11px;color:#cfd3dd;line-height:1.65;white-space:pre-wrap">{{ selBody }}</div>
+    </div>
+  </div>
+
+  <div style="position:absolute;left:200px;bottom:88px;max-width:460px;font-size:11px;color:rgba(157,255,214,0.82);z-index:4;pointer-events:none">{{ caption }}</div>
+
+  <div style="position:absolute;left:200px;right:252px;bottom:0;padding:12px 16px 14px;background:linear-gradient(to top,rgba(5,7,11,0.95),rgba(5,7,11,0));display:flex;flex-direction:column;gap:8px;z-index:5">
+    <div style="display:flex;align-items:center;gap:14px">
+      <button onClick="{{ togglePlay }}" style="background:rgba(95,224,176,0.1);border:1px solid rgba(95,224,176,0.35);color:#5fe0b0;font-family:inherit;font-size:11px;padding:6px 14px;cursor:pointer;letter-spacing:0.1em;min-width:76px" style-hover="background:rgba(95,224,176,0.22)">{{ playLabel }}</button>
+      <input type="range" min="0" max="{{ maxDay }}" step="1" value="{{ day }}" onInput="{{ onScrub }}" style="flex:1;height:19px;cursor:pointer">
+      <div style="display:flex;gap:4px">
+        <sc-for list="{{ speedRows }}" as="s" hint-placeholder-count="6">
+          <button onClick="{{ s.go }}" style="background:rgba(183,156,255,0.07);border:1px solid rgba(183,156,255,0.22);color:#cfd3dd;font-family:inherit;font-size:10px;padding:5px 8px;cursor:pointer" style-hover="background:rgba(183,156,255,0.2)">{{ s.label }}</button>
+        </sc-for>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:10px;color:rgba(232,234,240,0.66)">
+      <span>{{ phaseStrip }}</span>
+      <span>{{ perfTxt }}</span>
+    </div>
+  </div>
+
+  <sc-if value="{{ errMsg }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(20,8,10,0.94);border:1px solid rgba(255,95,109,0.5);padding:18px 22px;max-width:520px;z-index:9;font-size:12px;line-height:1.7;color:#ffb4bb">{{ errMsg }}</div>
+  </sc-if>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;bloom&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:0.62,&quot;min&quot;:0,&quot;max&quot;:1.6,&quot;step&quot;:0.02,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Look&quot;},&quot;exposure&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:1.12,&quot;min&quot;:0.4,&quot;max&quot;:2,&quot;step&quot;:0.02,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Look&quot;},&quot;dayDuration&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:1.6,&quot;min&quot;:0.3,&quot;max&quot;:6,&quot;step&quot;:0.1,&quot;unit&quot;:&quot;s&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Clock&quot;}}">
+class Component extends DCLogic {
+  state = {
+    ready: false, err: '', day: 0, maxDay: 59, speed: 1, playing: true, titleOn: true,
+    phase: 'INSTRUMENT', note: '', src: '', fold: '', place: '', open: 0, rows: 0,
+    counter: 0, kappa: 0, lic: '0/144', residual: 0, cascade: 0,
+    ledger: [0, 0, 0, 0, 0, 0, 0, 0], caption: 'waiting for the tape', sel: null, hover: null,
+    perf: '', layers: { floors: 1, desks: 1, figures: 1, tokens: 1, trays: 1, glass: 1, dock: 1, basement: 1, ledger: 1, beams: 1, annex: 1, director: 1 }
+  };
+
+  CAMS = ['ORBIT', 'ISO', 'DOCK', 'BASEMENT', 'ANNEX', 'TOP', 'LEDGER', 'CORE', 'WING'];
+  SPEEDS = [1, 4, 16, 64, 250, 1000];
+  ANIM_MAX = 16;
+
+  get DAY_SEC() { return this.props.dayDuration || 1.6; }
+
+  componentDidUpdate(prev) {
+    if (!this.world) return;
+    if (prev.bloom !== this.props.bloom) this.world.setBloom(this.props.bloom == null ? 0.62 : this.props.bloom);
+    if (prev.exposure !== this.props.exposure) this.world.setExposure(this.props.exposure == null ? 1.45 : this.props.exposure);
+  }
+
+  constructor(p) {
+    super(p);
+    this.stageRef = React.createRef();
+    this.acc = 0; this.last = 0; this.lastPhase = null; this.capT = 0; this.perfT = 0; this.frames = 0;
+  }
+
+  componentDidMount() { if (window.__acmeRaf) cancelAnimationFrame(window.__acmeRaf); this.boot().catch((e) => this.setState({ err: 'boot failed — ' + (e && e.message ? e.message : e) })); }
+  componentWillUnmount() { cancelAnimationFrame(this.raf); this.ro && this.ro.disconnect(); }
+
+  wait(fn, ms) {
+    return new Promise((res, rej) => {
+      const t0 = Date.now();
+      const tick = () => {
+        if (fn()) return res(true);
+        if (window.__THREE_ERR) return rej(new Error('three.js could not load: ' + window.__THREE_ERR));
+        if (Date.now() - t0 > (ms || 20000)) return rej(new Error('timed out waiting for three.js / modules'));
+        setTimeout(tick, 60);
+      };
+      tick();
+    });
+  }
+
+  async boot() {
+    const q = new URLSearchParams(location.search);
+    this.headless = q.get('raf') === '1';
+    await this.wait(() => window.THREE && window.__THREE_ADDONS && window.ACME && window.ACME.contract && window.ACME.createWorld);
+    const K = (this.K = window.ACME.contract);
+
+    let firm, tape, snaps, phases, src;
+    try {
+      const [f, t, s, p] = await Promise.all([
+        fetch('golden/firm.json').then((r) => { if (!r.ok) throw new Error('firm'); return r.json(); }),
+        fetch('golden/tape.jsonl').then((r) => { if (!r.ok) throw new Error('tape'); return r.text(); }),
+        fetch('golden/snapshots.jsonl').then((r) => { if (!r.ok) throw new Error('snaps'); return r.text(); }),
+        fetch('golden/phases.json').then((r) => { if (!r.ok) throw new Error('phases'); return r.json(); })
+      ]);
+      firm = f; tape = t; phases = p;
+      snaps = s.split('\n').filter((L) => L.length > 2).map((L) => JSON.parse(L));
+      src = 'GOLDEN · ' + firm.n + ' seats · ' + phases.length + ' phases';
+    } catch (e) {
+      const st = this.stub();
+      firm = st.firm; tape = st.tape; snaps = st.snapshots; phases = st.phases;
+      src = 'STUB · scripted 30-day tape · no backend';
+    }
+
+    this.firm = firm; this.snaps = snaps; this.phases = phases;
+    K.prepare(firm);
+    const pv = K.checkPlace(firm);
+    this.col = K.columns(tape);
+    this.world = window.ACME.createWorld({
+      THREE: window.THREE, addons: window.__THREE_ADDONS,
+      container: this.stageRef.current, firm: firm, contract: K
+    });
+    src += ' · ' + this.col.n.toLocaleString() + ' rows';
+    this.world.setBloom(this.props.bloom == null ? 0.62 : this.props.bloom);
+    this.world.setExposure(this.props.exposure == null ? 1.45 : this.props.exposure);
+
+    this.ro = new ResizeObserver(() => this.world.resize());
+    this.ro.observe(this.stageRef.current);
+    const el = this.stageRef.current;
+    el.addEventListener('pointermove', this.onMove);
+    el.addEventListener('pointerdown', this.onDown);
+
+    this.hooks();
+    const d0 = Math.max(0, Math.min(this.col.days - 1, parseInt(q.get('day') || '0', 10) || 0));
+    const camQ = (q.get('cam') || 'ORBIT').toUpperCase();
+    this.setState({
+      ready: true, maxDay: this.col.days - 1, src: src,
+      place: pv.ok ? 'place ✓' : 'place ✗',
+      titleOn: !this.headless, playing: !this.headless,
+      speed: this.headless ? 1 : 1
+    });
+    this.cmd({ type: 'cam', preset: this.CAMS.indexOf(camQ) >= 0 ? camQ : 'ORBIT' });
+    this.cmd({ type: 'seek', day: d0 });
+    if (!this.headless) setTimeout(() => this.setState({ titleOn: false }), 5400);
+    this.last = this.perfT = performance.now();
+    this.loop(this.last);
+  }
+
+  /* ---- commands: the only inbound channel ---- */
+  cmd(c) {
+    const W = this.world, K = this.K;
+    if (!W) return;
+    switch (c.type) {
+      case 'seek': {
+        const d = Math.max(0, Math.min(this.col.days - 1, c.day | 0));
+        this.st = K.foldTo(this.firm, this.col, d, this.phases);
+        W.snap(this.st);
+        this.director(this.st.phase);
+        this.acc = 0;
+        this.publish(d, 'seek ' + d);
+        W.renderOnce();
+        break;
+      }
+      case 'speed': {
+        const s = Math.max(1, Math.min(1000, c.value | 0));
+        W.setFast(s > this.ANIM_MAX);
+        this.setState({ speed: s });
+        break;
+      }
+      case 'cam': W.setCam(c.preset); W.renderOnce(); this.setState({ cam: c.preset }); break;
+      case 'select': {
+        this.setState({ sel: c.seat === null || c.seat === undefined ? null : c.seat });
+        W.select(c.seat === null ? null : c.seat);
+        break;
+      }
+      case 'layer': {
+        const L = Object.assign({}, this.state.layers);
+        L[c.name] = c.on ? 1 : 0;
+        W.setLayer(c.name, !!c.on);
+        this.setState({ layers: L });
+        break;
+      }
+      case 'cutover': {
+        const p = this.phases.filter((x) => x.phase === c.phase)[0];
+        if (p) this.cmd({ type: 'seek', day: p.day });
+        else this.director(c.phase);
+        break;
+      }
+      case 'play': this.setState({ playing: !!c.on }); break;
+    }
+  }
+
+  director(phase) {
+    if (phase === this.lastPhase) return;
+    this.lastPhase = phase;
+    this.world.cutover(phase);
+    const note = (this.phases.filter((p) => p.phase === phase)[0] || {}).note || '';
+    this.setState({ phase: phase, note: note });
+  }
+
+  publish(day, caption) {
+    const st = this.st, K = this.K;
+    const snap = this.snaps[day];
+    const bad = snap ? K.diff(st, snap) : ['no snapshot'];
+    let lic = 0;
+    st.machine.license.forEach((r) => r.forEach((v) => { if (v > 0) lic++; }));
+    this.setState({
+      day: day, open: st.open.length, rows: st.rowsToday, ledger: st.ledger.slice(),
+      counter: st.machine.counter, kappa: st.machine.kappa,
+      lic: lic + '/' + st.machine.license.length * 6, residual: st.residual, cascade: st.cascade.length,
+      fold: bad.length === 0 ? 'fold Δ 0' : 'fold Δ ' + bad.length,
+      caption: caption === undefined ? this.state.caption : caption
+    });
+  }
+
+  /* ---- the clock: a day's deltas, never a row at a time ---- */
+  loop = (ts) => {
+    this.raf = window.__acmeRaf = requestAnimationFrame(this.loop);
+    const dt = Math.min(0.05, (ts - this.last) / 1000);
+    this.last = ts;
+    const s = this.state;
+    if (s.playing && this.st) {
+      this.acc += (dt * s.speed) / this.DAY_SEC;
+      let steps = 0, advanced = false;
+      while (this.acc >= 1 && this.state.day < this.col.days - 1 && steps < 64) {
+        this.advance(this.state.day + 1, s.speed > this.ANIM_MAX);
+        this.acc -= 1; steps++; advanced = true;
+      }
+      if (advanced) {
+        if (s.speed > this.ANIM_MAX) this.world.snap(this.st);
+        else this.world.readouts(this.st);
+        this.director(this.st.phase);
+        this.publish(this.st.day);
+      } else if (this.state.day >= this.col.days - 1) this.setState({ playing: false });
+    }
+    try { this.world.frame(dt); } catch (e) {
+      if (!this.state.err) this.setState({ err: 'frame: ' + (e && e.stack ? String(e.stack).slice(0, 400) : String(e)) });
+    }
+    this.frames++;
+    if (ts - this.perfT > 500) {
+      const c = this.world.counts();
+      this.setState({ perf: Math.round((this.frames * 1000) / (ts - this.perfT)) + ' fps · ' + c.tokens + ' tokens · ' + c.calls + ' calls · ' + this.state.speed + 'x' });
+      this.frames = 0; this.perfT = ts;
+    }
+  };
+
+  advance(day, fast) {
+    const K = this.K, col = this.col, st = this.st, W = this.world;
+    const a = col.dayStart[day], b = col.dayEnd[day], n = Math.max(1, b - a);
+    const dayDur = this.DAY_SEC / Math.max(1, this.state.speed);
+    let lastRow = null;
+    for (let i = a; i < b; i++) {
+      const r = K.rowAt(col, i);
+      K.applyRow(st, r);
+      if (!fast) W.onRow(r, ((i - a) / n) * dayDur);
+      lastRow = r;
+    }
+    K.finishDay(st, day, this.phases);
+    if (lastRow && performance.now() - this.capT > 220) {
+      this.capT = performance.now();
+      this.setState({ caption: this.rowCaption(lastRow, day) });
+    }
+  }
+
+  rowCaption(r, day) {
+    const K = this.K, C = K.C, T = C.TYPES[r.type];
+    const cls = r.cls >= 0 && this.firm.classes[r.cls] ? this.firm.classes[r.cls].name : '—';
+    if (T === 'TICK') return 'TICK day ' + day + ' · ' + r.b + ' rows folded · open ' + this.st.open.length;
+    if (T === 'PATCH') return 'PATCH ' + C.PATCH_KIND[r.a] + ' · ' + cls;
+    if (T === 'LICENSE') return 'LICENSE ' + cls + ' band ' + r.band + ' → rung ' + r.a + (r.flags === 1 ? ' · history admitted' : '');
+    if (T === 'KAPPA') return 'KAPPA ' + r.a + ' (' + (r.b >= 0 ? '+' : '') + r.b + ')';
+    if (T === 'OUTCOME') return 'OUTCOME ' + cls + ' · ' + C.GRADE[r.a] + (r.flags === 1 ? ' · by machine' : ' · by seat ' + r.seat);
+    if (T === 'HOLD') return 'HOLD ' + cls + ' at seat ' + r.seat + ' · ' + C.HOLD_REASON[r.a];
+    return T + ' ' + cls + (r.seat >= 0 ? ' · seat ' + r.seat : '');
+  }
+
+  /* ---- pointer ---- */
+  onMove = (e) => {
+    if (!this.world) return;
+    const b = this.stageRef.current.getBoundingClientRect();
+    const id = this.world.pickAt(((e.clientX - b.left) / b.width) * 2 - 1, -((e.clientY - b.top) / b.height) * 2 + 1);
+    if (id === this.state.hover) return;
+    this.setState({ hover: id });
+  };
+  onDown = (e) => {
+    if (!this.world || e.button !== 0) return;
+    const b = this.stageRef.current.getBoundingClientRect();
+    const id = this.world.pickAt(((e.clientX - b.left) / b.width) * 2 - 1, -((e.clientY - b.top) / b.height) * 2 + 1);
+    this.cmd({ type: 'select', seat: id });
+  };
+
+  seatCard(id) {
+    if (id === null || id === undefined || !this.firm) return ['SELECTION', 'click a desk.\nhover a desk to read its tray.'];
+    const s = this.firm.seats[id], K = this.K;
+    const p = K.place(s);
+    const held = [];
+    this.st.trayOf.forEach((seat, oid) => {
+      if (seat !== id) return;
+      const tk = this.st.tokens.get(oid);
+      held.push('  #' + oid + ' ' + (tk ? this.firm.classes[tk.cls].name : '?') + ' · ' + K.C.HOLD_REASON[(tk && tk.reason) || 0]);
+    });
+    const body = [
+      'seat ' + s.id + '  ' + s.kind + '  fn=' + s.fn,
+      'wire ' + s.wire + (s.wire < 6 ? ' ' + this.firm.wires[s.wire].name : ' cross') + '  depth ' + s.depth,
+      'boss ' + s.boss + '  floor ' + p.floor + '  ' + p.frame + (p.wing >= 0 ? ' w' + p.wing : '') + ' slot ' + p.slot,
+      'salary $' + (s.salary / 1000).toFixed(0) + 'k  attention ' + s.attention + 'm',
+      'spec ' + s.spec.map((c) => this.firm.classes[c].name).join(', '),
+      'minutes ' + this.st.seats.minutes[s.id].toLocaleString() + '  held ' + this.st.seats.held[s.id],
+      held.length ? 'tray:' : 'tray: empty'
+    ].concat(held.slice(0, 6));
+    return ['SEAT ' + s.id, body.join('\n')];
+  }
+
+  /* ---- dev hooks ---- */
+  hooks() {
+    const self = this;
+    window.__state = () => ({
+      day: self.st.day, phase: self.st.phase, open: self.st.open.length, ledger: self.st.ledger.slice(),
+      machine: { kappa: self.st.machine.kappa, counter: self.st.machine.counter, counters: Object.assign({}, self.st.machine.counters) },
+      residual: self.st.residual, cascade: self.st.cascade.slice(), span: self.st.span,
+      tokens: self.st.tokens.size, cam: self.world.camName(), speed: self.state.speed, view: self.world.counts()
+    });
+    window.__fire = (row) => {
+      const K = self.K;
+      const r = Object.assign({ type: 0, cls: -1, day: self.st.day, oid: -1, seat: -1, a: 0, b: 0, margin: 0, value: 0, arm: 0, band: 0, flags: 0 }, row);
+      if (typeof r.type === 'string') r.type = K.T[r.type];
+      K.applyRow(self.st, r);
+      self.world.onRow(r, 0);
+      self.world.readouts(self.st);
+      self.publish(self.st.day, 'fired ' + K.C.TYPES[r.type]);
+      return true;
+    };
+    window.__cam = (p) => { self.cmd({ type: 'cam', preset: String(p).toUpperCase() }); return self.world.camName(); };
+    window.__seek = (d) => { self.cmd({ type: 'seek', day: d }); return self.st.day; };
+    window.__speed = (v) => { self.cmd({ type: 'speed', value: v }); return self.state.speed; };
+    window.__shot = () => self.world.shot();
+    window.__fold_check = (day) => {
+      const K = self.K;
+      const d = day === undefined ? self.st.day : Math.max(0, Math.min(self.col.days - 1, day | 0));
+      const fresh = K.foldTo(self.firm, self.col, d, self.phases);
+      const bad = self.snaps[d] ? K.diff(fresh, self.snaps[d]) : ['no snapshot for day ' + d];
+      return { day: d, delta: bad.length, bad: bad.slice(0, 8) };
+    };
+    window.__fold_check_all = () => {
+      const K = self.K, st = K.blankState(self.firm);
+      let total = 0, first = -1;
+      for (let d = 0; d < self.col.days; d++) {
+        for (let i = self.col.dayStart[d]; i < self.col.dayEnd[d]; i++) K.applyRow(st, K.rowAt(self.col, i));
+        K.finishDay(st, d, self.phases);
+        const bad = self.snaps[d] ? K.diff(st, self.snaps[d]) : ['no snapshot'];
+        total += bad.length;
+        if (bad.length && first < 0) first = d;
+      }
+      return { days: self.col.days, delta: total, firstBadDay: first };
+    };
+    window.__place_check = () => self.K.checkPlace(self.firm);
+    window.__cmd = (c) => self.cmd(c);
+  }
+
+  /* ---- in-page stub: a scripted 30-day tape so the page runs cold ---- */
+  stub() {
+    const K = window.ACME.contract, T = K.C.TYPES;
+    const wires = ['INTAKE', 'CREDIT', 'SUPPLY', 'CARE', 'PEOPLE', 'MARKET'].map((n, i) => ({ id: i, name: n }));
+    const classes = [];
+    for (let i = 0; i < 24; i++) classes.push({
+      id: i, name: 'STUB_' + String(i).padStart(2, '0'), wire: i >> 2, n_systems: 1 + (i % 4),
+      verdict_latency: 1 + (i % 5), base_rate: 500 + i * 15, arrival_per_day: 1 + (i % 3),
+      value: 4000 + i * 2200, reversible: i % 2, warrant: i % 5 === 0 ? 1 : 0
+    });
+    const seats = [], KD = ['C', 'VP', 'director', 'manager', 'lead', 'IC'];
+    const push = (kind, fn, wire, boss, depth) => {
+      seats.push({ id: seats.length, kind: kind, fn: fn, wire: wire, boss: boss, depth: depth, salary: 120000, attention: 300, spec: [] });
+      return seats.length - 1;
+    };
+    push('C', 'E', 6, -1, 0);
+    const vp = [], ld = [], ic = [];
+    for (let w = 0; w < 6; w++) vp.push(push('VP', 'E', w, 0, 1));
+    for (let w = 0; w < 6; w++) for (let k = 0; k < 2; k++) ld.push(push('lead', 'E', w, vp[w], 4));
+    for (let i = 0; i < 24; i++) { const w = i % 6; ic.push(push('IC', 'E', w, ld[w * 2 + (i / 6 | 0) % 2], 5)); }
+    for (let i = 0; i < 4; i++) push(KD[1 + (i % 5)], 'alpha', 6, vp[i % 6], 1 + (i % 5));
+    push('director', 'warrant', 6, 0, 1);
+    seats.forEach((s) => { s.spec = [s.wire < 6 ? s.wire * 4 : 0, (s.wire < 6 ? s.wire * 4 : 0) + 1]; });
+    const firm = { seed: 1, span: 6, n: seats.length, wires: wires, classes: classes, seats: seats, writ: { thin_margin: 40, eps_floor: 15, kappa_max: 1800, audit_min: 12, canary_delta: 25 } };
+    const phases = [
+      { day: 0, phase: 'INSTRUMENT', note: 'stub' }, { day: 4, phase: 'COMPILE', note: 'stub' },
+      { day: 8, phase: 'REPLAY', note: 'stub' }, { day: 12, phase: 'LICENSE', note: 'stub' },
+      { day: 16, phase: 'CANARY', note: 'stub' }, { day: 20, phase: 'CLIMB', note: 'stub' },
+      { day: 24, phase: 'COMPILE_OUT', note: 'stub' }, { day: 27, phase: 'CASCADE', note: 'stub' }
+    ];
+    const rows = [];
+    const R = (type, o) => {
+      const r = Object.assign({ type: type, cls: -1, day: 0, oid: -1, seat: -1, a: 0, b: 0, margin: 0, value: 0, arm: 0, band: 0, flags: 0 }, o);
+      rows.push(r); return r;
+    };
+    let oid = 0, kappa = 0;
+    for (let d = 0; d < 30; d++) {
+      const live = [];
+      for (let c = 0; c < 24; c++) {
+        const seat = ic[(d + c) % ic.length], value = classes[c].value, band = Math.min(5, (value / 16000) | 0);
+        const id = oid++;
+        R('ARRIVE', { cls: c, day: d, oid: id, value: value, band: band, arm: c % 4 });
+        R('ASSIGN', { cls: c, day: d, oid: id, seat: seat, a: -1, b: 0, value: value, band: band });
+        for (let k = 0; k < classes[c].n_systems; k++) R('CONTEXT', { cls: c, day: d, oid: id, seat: seat, a: c * 3 + k, b: 6 + k, value: value, band: band });
+        if ((d + c) % 3 === 0) R('HOLD', { cls: c, day: d, oid: id, seat: seat, a: (d + c) % 6, b: 12, value: value, band: band });
+        else if ((d + c) % 7 === 0) { R('ESCALATE', { cls: c, day: d, oid: id, seat: seat, a: seats[seat].boss, b: 14, value: value, band: band }); live.push([id, c, seats[seat].boss, value, band]); }
+        else live.push([id, c, seat, value, band]);
+      }
+      live.forEach((L) => {
+        const m = ((L[0] * 37) % 400) - 140;
+        R('DECIDE', { cls: L[1], day: d, oid: L[0], seat: L[2], a: m > 0 ? 1 : 0, b: 18, margin: m, value: L[3], band: L[4] });
+        if (m > 0) {
+          R('EFFECT', { cls: L[1], day: d, oid: L[0], seat: L[2], a: L[0] % 4, b: 5, margin: m, value: L[3], band: L[4] });
+          if (L[0] % 11 === 0) R('UNDO', { cls: L[1], day: d, oid: L[0], seat: L[2], a: 1, b: 9, margin: m, value: L[3], band: L[4] });
+        }
+        R('OUTCOME', { cls: L[1], day: d, oid: L[0], seat: L[2], a: L[0] % 9 === 0 ? 2 : L[0] % 5 === 0 ? 1 : 0, b: 12, margin: m, value: L[3], band: L[4], flags: d > 12 && L[0] % 4 === 0 ? 1 : 0 });
+      });
+      for (let k = 0; k < 3; k++) R('MEETING', { day: d, seat: ld[(d + k) % ld.length], a: k === 0 ? ld[(d + 3) % ld.length] : -1, b: 3 + k, value: 30, flags: k === 0 ? 1 : 0 });
+      if (d >= 12) R('LICENSE', { cls: (d * 5) % 24, day: d, a: 1 + (d % 5), band: d % 6, flags: d % 3 === 0 ? 1 : 0 });
+      kappa = Math.min(1800, kappa + 40);
+      R('KAPPA', { day: d, a: kappa, b: 40 });
+      if (d === 6) R('PATCH', { cls: 3, day: d, a: 1, b: 9 });
+      if (d === 14) R('PATCH', { day: d, a: 0, b: 7 });
+      if (d >= 20 && d < 24) R('PATCH', { day: d, a: 2, b: (d - 20) * 10 + 4 });
+      if (d >= 24 && d < 27) R('PATCH', { cls: (d - 24) * 6, day: d, a: 4, b: 0 });
+      if (d >= 27) R('PATCH', { day: d, a: 3, b: d - 27 });
+      R('TICK', { day: d, a: d, b: 0 });
+    }
+    const tape = rows.map((r) => '{"type":"' + r.type + '","cls":' + r.cls + ',"day":' + r.day + ',"oid":' + r.oid +
+      ',"seat":' + r.seat + ',"a":' + r.a + ',"b":' + r.b + ',"margin":' + r.margin + ',"value":' + r.value +
+      ',"arm":' + r.arm + ',"band":' + r.band + ',"flags":' + r.flags + '}').join('\n');
+    K.prepare(firm);
+    const col = K.columns(tape), st = K.blankState(firm), snapshots = [];
+    for (let d = 0; d < col.days; d++) {
+      for (let i = col.dayStart[d]; i < col.dayEnd[d]; i++) K.applyRow(st, K.rowAt(col, i));
+      K.finishDay(st, d, phases);
+      snapshots.push({
+        day: st.day, phase: st.phase,
+        seats: { held: st.seats.held.slice(), minutes: st.seats.minutes.slice() },
+        open: st.open.slice(), ledger: st.ledger.slice(),
+        machine: {
+          license: st.machine.license.map((r) => r.slice()), admitted: st.machine.admitted.map((r) => r.slice()),
+          counters: Object.assign({}, st.machine.counters), kappa: st.machine.kappa, counter: st.machine.counter
+        },
+        cascade: st.cascade.slice(), residual: st.residual
+      });
+    }
+    return { firm: firm, tape: tape, snapshots: snapshots, phases: phases };
+  }
+
+  renderVals() {
+    const s = this.state, self = this;
+    const cardId = s.hover !== null && s.hover !== undefined ? s.hover : s.sel;
+    const card = this.st ? this.seatCard(cardId) : ['SELECTION', 'booting'];
+    const strip = (this.phases || []).map((p) => (p.phase === s.phase ? '[' + p.phase + ']' : p.phase.slice(0, 3))).join(' ');
+    return {
+      stageRef: this.stageRef,
+      titleOn: !!s.titleOn,
+      errMsg: s.err || '',
+      phaseName: s.phase,
+      phaseNote: s.note,
+      srcLabel: s.src || 'loading the tape…',
+      dayLabel: String(s.day).padStart(2, '0') + '/' + s.maxDay,
+      rowsToday: (s.rows || 0).toLocaleString(),
+      openCount: (s.open || 0).toLocaleString(),
+      foldBadge: s.fold || 'fold —',
+      placeBadge: s.place || 'place —',
+      counterTxt: (s.counter || 0).toLocaleString(),
+      kappaTxt: String(s.kappa || 0),
+      licTxt: s.lic,
+      residualTxt: String(s.residual || 0),
+      cascadeTxt: String(s.cascade || 0),
+      ledgerRows: (this.K ? this.K.C.LEDGER : ['FETCH', 'DECIDE', 'HOLD', 'ESCALATE', 'MEETING', 'UNDO', 'AUDIT', 'PATCH']).map((n, i) => ({
+        name: n, val: (s.ledger[i] || 0).toLocaleString()
+      })),
+      selTitle: card[0],
+      selBody: card[1],
+      caption: s.caption,
+      day: s.day,
+      maxDay: s.maxDay,
+      playLabel: s.playing ? '❙❙ PAUSE' : '▶ PLAY',
+      perfTxt: s.perf,
+      phaseStrip: strip,
+      togglePlay: () => self.cmd({ type: 'play', on: !self.state.playing }),
+      onScrub: (e) => { const v = +e.target.value; self.setState({ playing: false }); self.cmd({ type: 'seek', day: v }); },
+      camRows: this.CAMS.map((c) => ({ label: c, go: () => self.cmd({ type: 'cam', preset: c }) })),
+      speedRows: this.SPEEDS.map((v) => ({ label: v + 'x', go: () => self.cmd({ type: 'speed', value: v }) })),
+      layerRows: Object.keys(s.layers).map((n) => ({
+        name: n, mark: s.layers[n] ? 'ON' : '—',
+        go: () => self.cmd({ type: 'layer', name: n, on: !self.state.layers[n] })
+      })),
+      phaseRows: (this.K ? this.K.C.PHASES : []).map((p) => ({
+        label: (p === s.phase ? '▸ ' : '  ') + p, go: () => self.cmd({ type: 'cutover', phase: p })
+      }))
+    };
+  }
+}
+</script>
+</body>
+</html>

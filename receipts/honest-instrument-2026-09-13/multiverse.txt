@@ -1,0 +1,28 @@
+
+=== THE MULTIVERSE · MANY ACMES AT ONCE ==============================
+  Best-of-N continuations under EDITED CONSTRAINTS, sharing one prefix and one
+  physics, reweighted by the writ. This is the search over STRUCTURE, and it is
+  derivative-free on purpose: an org chart has no gradient. On a card each
+  universe is one block; here they are serial and it still fits in a coffee break.
+
+  rank  J mean $M       sd     J pess   weight  patch
+     0     828.36    12.39     834.56   0.9056  BUY THE LANE on claim.coverage
+     1     832.32    17.62     841.13   0.0339  BUY THE LANE on dispute.resolve
+     2     832.04    18.93     841.51   0.0280  BUY THE LANE on fraud.refer
+     3     834.25    20.64     844.57   0.0061  thin margin 0.30 (act sooner)
+     4     834.97    19.38     844.66   0.0058  BASELINE   <- do nothing
+     5     834.97    19.38     844.66   0.0058  eps floor 0.10 (explore more)
+     6     835.22    19.30     844.88   0.0052  kappa cap 0.60 (stricter brake)
+     7     834.67    20.64     844.99   0.0049  span 10 (flatter cone)
+     8     835.74    19.66     845.57   0.0037  span 5 (deeper cone)
+     9     837.68    20.51     847.93   0.0011  thin margin 0.90 (act later)
+
+  10 universes x 6 rollouts x 200 days in 2095.5 s.
+  Every one of these is a structural patch with an inverse. A patch is DEPLOYED
+  with its forecast attached, and if the arrived quarter misses the forecast it
+  unwinds. A search result is not a licence; it is a proposal with a receipt.
+
+real	34m55.509s
+user	34m50.537s
+sys	0m4.780s
+exit=0

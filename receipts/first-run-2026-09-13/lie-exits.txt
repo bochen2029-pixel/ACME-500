@@ -1,0 +1,14 @@
+lie 0 exit=1
+lie 1 exit=1
+lie 2 exit=1
+lie 3 exit=1
+lie 4 exit=1
+lie 5 exit=1
+lie 6 exit=1
+lie 7 exit=0
+lie 8 exit=1
+lie 9 exit=1
+lie 10 exit=1
+lie 11 exit=1
+lie 12 exit=1
+lie 13 exit=1

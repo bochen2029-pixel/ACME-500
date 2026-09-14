@@ -1,0 +1,42 @@
+[
+ {
+  "day": 0,
+  "phase": "INSTRUMENT",
+  "note": "the tape is spooled; nothing is claimed"
+ },
+ {
+  "day": 6,
+  "phase": "COMPILE",
+  "note": "the join graph draws itself over the rack"
+ },
+ {
+  "day": 14,
+  "phase": "REPLAY",
+  "note": "the tower is run against its own history"
+ },
+ {
+  "day": 20,
+  "phase": "LICENSE",
+  "note": "rungs are issued per class and band"
+ },
+ {
+  "day": 30,
+  "phase": "CANARY",
+  "note": "machine verdicts run beside live desks"
+ },
+ {
+  "day": 38,
+  "phase": "CLIMB",
+  "note": "licensed bands climb; floors go quiet"
+ },
+ {
+  "day": 46,
+  "phase": "COMPILE_OUT",
+  "note": "classes collapse into routine blocks"
+ },
+ {
+  "day": 54,
+  "phase": "CASCADE",
+  "note": "the annex empties; residual is what is left"
+ }
+]

@@ -1,0 +1,4 @@
+# The tape is a scan, not a parse; the sources build on Linux. Keep everything LF.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
