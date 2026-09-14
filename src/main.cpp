@@ -71,7 +71,8 @@ static void rule(const char* t) { std::printf("\n=== %s ", t); for (int i = (int
 // ----------------------------------------------------------------------------
 // The incumbent arm: ACME as it is
 // ----------------------------------------------------------------------------
-struct Run { World w; Firm f; Tape tape; HumanStats hs; };
+struct Run { World w; Ledger L; Firm f; Tape tape; HumanStats hs;
+             void init_ledger() { L.init(w.NC); } };   // C0: the cells live in the ledger, the plant keeps the truth
 
 // mode * 10 + switch, as the HEADER row carries it: world 0 synthetic · 1 fitted · 2 replay · 3 real;
 // switch 0 off · 1 shadow · 2 live. ACME is (synthetic, live) by construction.
@@ -79,14 +80,14 @@ enum { MODE_SYNTHETIC = 0, SW_OFF = 0, SW_SHADOW = 1, SW_LIVE = 2 };
 
 static void run_human(Run& R, int days, bool chain = true) {
   R.tape.chaining = chain;
-  R.hs.init(R.w.NC);
+  R.hs.init(R.w.NC); if (R.L.NC == 0) R.init_ledger();
   auto rep = reports_of(R.f);
   if (R.tape.size() == 0) R.tape.header(MODE_SYNTHETIC, SW_LIVE, alphabet_hash());
   for (int d = 0; d < days; ++d) {
     R.tape.tick((uint32_t)d);                       // v2: the clock is a row
-    world_arrive(R.w, R.tape, (uint32_t)d);
-    human_day(R.w, R.f, R.tape, R.hs, rep, (uint32_t)d);
-    world_settle(R.w, R.f, R.tape, (uint32_t)d);
+    world_arrive(R.w, R.L, R.tape, (uint32_t)d);
+    human_day(R.w, R.L, R.f, R.tape, R.hs, rep, (uint32_t)d);
+    world_settle(R.w, R.L, R.f, R.tape, (uint32_t)d);
   }
 }
 
@@ -100,7 +101,7 @@ static int cmd_sim(const Args& a) {
   const double t0 = now_s();
   run_human(R, a.days);
   const double dt = now_s() - t0;
-  const ArmResult ar = score_arm(R.w, R.f);
+  const ArmResult ar = score_arm(R.L, R.f);
 
   print_time_ledger(R.hs.time, "THE YEAR");
   rule("WHAT THE FIRM PRODUCED");
@@ -108,7 +109,7 @@ static int cmd_sim(const Args& a) {
               ar.settled, a.days, 100.0 * ar.good / std::max(1L, ar.settled),
               100.0 * ar.late / std::max(1L, ar.settled), 100.0 * ar.bad / std::max(1L, ar.settled));
   std::printf("  mean cycle %.1f days   deadline breaches %ld (%.1f%%)   still open %zu\n",
-              ar.mean_cycle(), ar.breached, 100.0 * ar.breached / std::max(1L, ar.settled), R.w.open_idx.size());
+              ar.mean_cycle(), ar.breached, 100.0 * ar.breached / std::max(1L, ar.settled), R.L.open_idx.size());
   std::printf("  escalations %llu (%.2f per decision)   meetings held %llu   holds recorded %llu\n",
               (unsigned long long)R.hs.n_escalated, (double)R.hs.n_escalated / std::max<uint64_t>(1, R.hs.n_decided),
               (unsigned long long)R.hs.n_meetings, (unsigned long long)R.hs.n_held);
@@ -148,11 +149,13 @@ static AutoOut run_machine(const Args& a, Run& R, int warm_days, int total_days,
 
   // ---- PHASE 2: the resident, compiled, not yet acting
   Resident res;
-  res.init(R.w, R.f, out.C, R.f.writ, a.seed);
+  res.init(R.w.NC, R.f.size(), R.w.demand_scale, out.C, R.f.writ, a.seed);
+  // C0: the machine touches the world through the port only
+  PlantStore store(&R.w); PlantJudge judge(&R.w);
 
   // ---- PHASE 3: REPLAY. The fast grader, on its own support.
   double t0 = now_s();
-  out.RP = replay(R.w, R.f, res.fd, out.C, res.lad, R.f.writ);
+  out.RP = replay(R.L, R.f, res.fd, out.C, res.lad, R.f.writ, store, judge);
   out.replay_ms = (now_s() - t0) * 1000.0;
   for (int c = 0; c < R.w.NC; ++c) out.C.coverage[c] = out.RP.coverage[c];
   out.hist_licensed = license_from_history(res.lad, out.RP, (uint32_t)warm_days, R.tape);
@@ -162,17 +165,17 @@ static AutoOut run_machine(const Args& a, Run& R, int warm_days, int total_days,
   t0 = now_s();
   for (int d = warm_days; d < total_days; ++d) {
     R.tape.tick((uint32_t)d);
-    world_arrive(R.w, R.tape, (uint32_t)d);
-    res.period(R.w, R.f, R.tape, (uint32_t)d);         // the resident goes first: it never sleeps
-    human_day(R.w, R.f, R.tape, R.hs, rep, (uint32_t)d);
-    world_settle(R.w, R.f, R.tape, (uint32_t)d);
-    res.grade(R.w, R.f, R.tape, (uint32_t)d);
+    world_arrive(R.w, R.L, R.tape, (uint32_t)d);
+    res.period(R.L, R.f, R.tape, (uint32_t)d, store, judge);   // the resident goes first: it never sleeps
+    human_day(R.w, R.L, R.f, R.tape, R.hs, rep, (uint32_t)d);
+    world_settle(R.w, R.L, R.f, R.tape, (uint32_t)d);
+    res.grade(R.L, R.f, R.tape, (uint32_t)d);
     ++out.periods;
   }
   out.period_ms = (now_s() - t0) * 1000.0 / std::max(1, out.periods);
   out.lad = res.lad; out.ms = res.st;
-  out.res = residual_of(res.lad, R.w, out.C);
-  out.arm = score_arm(R.w, R.f);
+  out.res = residual_of(res.lad, R.w.demand_scale, out.C);
+  out.arm = score_arm(R.L, R.f);
   (void)verbose;
   return out;
 }
@@ -198,7 +201,7 @@ static int cmd_automate(const Args& a) {
                 A.C.n_systems[c], cls_spec(c).n_systems, A.C.coverage[c], 1.f - R.w.tacit[c], A.C.decide_frac[c]);
   }
   std::printf("  join graph recovered exactly on %d of %d classes.\n", exact, R.w.NC);
-  auto inv = mine_invariants(R.tape, R.w, R.w.NC);
+  auto inv = mine_invariants(R.tape, R.L, R.w.NC);
   int hard = 0; for (const auto& i : inv) if (i.hard) ++hard;
   std::printf("  invariants: %zu predicates proposed, %d held with ZERO violations over the\n"
               "  history and become -inf masks before normalisation. The rest are soft terms.\n", inv.size(), hard);
@@ -329,7 +332,7 @@ static int cmd_twin(const Args& a) {
   const AutoOut mb = run_machine(a, B, a.warm, a.days, false);
   const double dt = now_s() - t0;
 
-  const ArmResult ra = score_arm(A.w, A.f);
+  const ArmResult ra = score_arm(A.L, A.f);
   const ArmResult rb = mb.arm;
 
   std::printf("\n  %-30s %14s %14s %12s\n", "", "incumbent", "resident", "delta");
@@ -348,13 +351,13 @@ static int cmd_twin(const Args& a) {
   row("backlog at w_unplaced, $M", ra.backlog_cost / 1e6, rb.backlog_cost / 1e6, "%.2f");
   row("TOTAL cost, $M",          ra.total_cost() / 1e6, rb.total_cost() / 1e6, "%.2f");
   row("human minutes, thousands", A.hs.time.total() / 1000.0, B.hs.time.total() / 1000.0, "%.0f");
-  row("still open at the end",   (double)A.w.open_idx.size(), (double)B.w.open_idx.size(), "%.0f");
+  row("still open at the end",   (double)A.L.open_idx.size(), (double)B.L.open_idx.size(), "%.0f");
 
   // THE BIAS OF THE CANARY ESTIMATOR
   CanaryBias cb;
   cb.true_effect = (100.0 * rb.good / std::max(1L, rb.settled)) - (100.0 * ra.good / std::max(1L, ra.settled));
   long mg = 0, mn = 0, hg = 0, hn = 0, ag = 0, an = 0;
-  for (const Obligation& o : B.w.ob) {
+  for (const Obligation& o : B.L.ob) {
     if (o.state != OB_SETTLED) continue;
     if (o.via == 1 || o.via == 3)      { ++mn; if (o.outcome == OK_GOOD) ++mg; }   // the wager: unattended acts
     else if (o.via == 2 || o.via == 4) { ++an; if (o.outcome == OK_GOOD) ++ag; }   // assisted: a person executed it
@@ -544,9 +547,9 @@ static int cmd_selftest(const Args& a) {
     //          meter must equal the live one. The lie is a struct field set with
     //          no row: exactly the defect the v1 program had everywhere.
     {
-      if (LIE == 15) A.w.ob[A.w.ob.size() / 2].hops += 1;                  // THE LIE
+      if (LIE == 15) A.L.ob[A.L.ob.size() / 2].hops += 1;                  // THE LIE
       const Ledger L = Ledger::fold(A.tape, A.w.NC);
-      const FoldDiff fd_ = ledger_diff(L, A.w);
+      const FoldDiff fd_ = ledger_diff(L, A.L);
       const long mins = minutes_diff(L, A.hs, A.w.NC);
       const bool ok = fd_.fields == 0 && mins == 0 && L.schema == alphabet_hash() && L.ver == REC_VER;
       snprintf(buf, sizeof buf, "(%zu cells folded from %zu rows; %ld field diffs%s%s; %ld minute diffs; alphabet pin %s)",
@@ -709,8 +712,9 @@ static int cmd_selftest(const Args& a) {
     // says GOOD must leave it blind, and the oracle must see that it is blind.
     // (The first lie moved one determinant to tacit after the outcomes had
     // already settled; it did not reach the mechanism and O7 passed it.)
-    if (LIE == 7) for (Obligation& o : R.w.ob) if (o.state == OB_SETTLED) o.outcome = OK_GOOD;
-    ReplayOut RP = replay(R.w, R.f, fd, C, lad, R.f.writ);
+    if (LIE == 7) for (Obligation& o : R.L.ob) if (o.state == OB_SETTLED) o.outcome = OK_GOOD;
+    PlantStore store(&R.w); PlantJudge judge(&R.w);
+    ReplayOut RP = replay(R.L, R.f, fd, C, lad, R.f.writ, store, judge);
     double num = 0, den = 0, sx = 0, sy = 0, sxy = 0, sxx = 0, syy = 0; int k = 0;
     for (int c = 0; c < R.w.NC; ++c) {
       if (RP.n[c] < 60) continue;
@@ -731,7 +735,8 @@ static int cmd_selftest(const Args& a) {
     run_human(R, 120);
     Compiled C = compile_from_tape(R.tape, R.w.NC, 17, true);
     Field fd; fd.init(R.w.NC, R.f.size(), 17); Ladder lad; lad.init(R.w.NC);
-    ReplayOut RP = replay(R.w, R.f, fd, C, lad, R.f.writ);
+    PlantStore store(&R.w); PlantJudge judge(&R.w);
+    ReplayOut RP = replay(R.L, R.f, fd, C, lad, R.f.writ, store, judge);
     long dfb = 0; for (int c = 0; c < R.w.NC; ++c) dfb += RP.disagree_firm_bad[c];
     long credited = 0;
     for (int c = 0; c < R.w.NC; ++c) for (int b = 0; b < NBAND; ++b) {
@@ -750,12 +755,12 @@ static int cmd_selftest(const Args& a) {
     Run R; R.f = build_acme(260, 7, 19); R.w = make_world(19); R.w.demand_scale = 1.7f;
     run_human(R, 320);
     Compiled C = compile_from_tape(R.tape, R.w.NC, 19, true);
-    Resident res; res.init(R.w, R.f, C, R.f.writ, 19);
+    Resident res; res.init(R.w.NC, R.f.size(), R.w.demand_scale, C, R.f.writ, 19);
     // seed the estimator the way the resident does: train the head on arrivals
     // first, then read the seat as what the head could not explain
     float fq[FT_N];
     for (int pass = 0; pass < 2; ++pass)
-      for (const Obligation& o : R.w.ob) {
+      for (const Obligation& o : R.L.ob) {
         if (o.state != OB_SETTLED || o.seat < 0 || o.cls >= 32) continue;
         const ClassSpec& sq = cls_spec(o.cls);
         Field::feats(sq, o.completeness, 0.5f, (float)((int)o.day_decided - (int)o.day_due) / 7.f,
@@ -809,22 +814,22 @@ static int cmd_selftest(const Args& a) {
   //          and the window closes the moment the world reacts.
   {
     Run R; R.f = build_acme(120, 7, 23); R.w = make_world(23); R.w.demand_scale = 1.0f;
-    Tape t; world_arrive(R.w, t, 0);
+    R.init_ledger(); Tape t; world_arrive(R.w, R.L, t, 0);
     Integrator ig;
-    std::vector<uint8_t> before(R.w.ob.size());
-    for (size_t i = 0; i < R.w.ob.size(); ++i) before[i] = R.w.ob[i].state;
+    std::vector<uint8_t> before(R.L.ob.size());
+    for (size_t i = 0; i < R.L.ob.size(); ++i) before[i] = R.L.ob[i].state;
     int n = 0;
-    for (uint32_t i = 0; i < (uint32_t)R.w.ob.size() && n < 60; ++i)
-      if (cls_spec(R.w.ob[i].cls).reversible) { ig.commit(R.w, t, i, 1, 0, 1.5f, 2); ++n; }
-    for (size_t k = ig.ledger.size(); k-- > 0; ) ig.unwind(R.w, t, k, 1);
+    for (uint32_t i = 0; i < (uint32_t)R.L.ob.size() && n < 60; ++i)
+      if (cls_spec(R.L.ob[i].cls).reversible) { ig.commit(R.L, t, i, 1, 0, 1.5f, 2); ++n; }
+    for (size_t k = ig.ledger.size(); k-- > 0; ) ig.unwind(R.L, t, k, 1);
     bool restored = true;
-    for (size_t i = 0; i < R.w.ob.size(); ++i) if (R.w.ob[i].state != before[i]) restored = false;
+    for (size_t i = 0; i < R.L.ob.size(); ++i) if (R.L.ob[i].state != before[i]) restored = false;
     // and after the world reacts, the inverse must be refused
-    ig.commit(R.w, t, 0, 1, 2, 1.f, 2);
-    R.w.ob[0].state = OB_SETTLED;
-    const bool refused = !ig.unwind(R.w, t, ig.ledger.size() - 1, 3);
+    ig.commit(R.L, t, 0, 1, 2, 1.f, 2);
+    R.L.ob[0].state = OB_SETTLED;
+    const bool refused = !ig.unwind(R.L, t, ig.ledger.size() - 1, 3);
     bool ok = restored && refused && (n > 20);
-    if (LIE == 11) ok = ig.unwind(R.w, t, ig.ledger.size() - 1, 3);       // THE LIE
+    if (LIE == 11) ok = ig.unwind(R.L, t, ig.ledger.size() - 1, 3);       // THE LIE
     snprintf(buf, sizeof buf, "(%d effects committed and unwound; post-settlement reversal refused)", n);
     ck(LIE == 11 ? !ok : ok, "O11  effects carry inverses; the window closes at settlement", buf);
   }

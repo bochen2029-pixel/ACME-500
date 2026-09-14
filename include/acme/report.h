@@ -26,9 +26,9 @@
 #pragma once
 #include "core.h"
 #include "firm.h"
-#include "world.h"
-#include "human.h"
+#include "ledger.h"
 #include "machine.h"
+// world.h is NOT included: the report reads the ledger, never the plant (O17)
 
 namespace acme {
 
@@ -84,11 +84,11 @@ struct Residual {
   double total = 0;
 };
 
-inline Residual residual_of(const Ladder& lad, const World& w, const Compiled& C) {
+inline Residual residual_of(const Ladder& lad, float demand_scale, const Compiled& C) {
   Residual r;
   for (int c = 0; c < lad.NC; ++c) {
     const ClassSpec& sp = cls_spec(c);
-    const double mass = sp.arrival_per_day * w.demand_scale;
+    const double mass = sp.arrival_per_day * demand_scale;
     r.total += mass;
     if (sp.warrant) { r.warrant += mass; continue; }
     // counterparty: high-value contested classes where the other side wants a person
@@ -134,9 +134,9 @@ struct ArmResult {
   double mean_cycle() const { return n_cycle ? cycle_days / n_cycle : 0.0; }
 };
 
-inline ArmResult score_arm(const World& w, const Firm& f) {
+inline ArmResult score_arm(const Ledger& L, const Firm& f) {
   ArmResult r;
-  for (const Obligation& o : w.ob) {
+  for (const Obligation& o : L.ob) {
     if (o.state != OB_SETTLED) {
       ++r.open_n;
       r.backlog_cost += f.writ.w_unplaced * cls_spec(o.cls).value;

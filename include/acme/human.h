@@ -39,30 +39,10 @@
 #pragma once
 #include "core.h"
 #include "firm.h"
+#include "ledger.h"
 #include "world.h"
 
 namespace acme {
-
-// Minutes, metered by act. This is the instrument the whole thesis rests on.
-struct TimeLedger {
-  Acc fetch, frame, decide, commit, transport, meeting, rework, glue;
-  double total() const { return fetch.sum() + frame.sum() + decide.sum() + commit.sum()
-                              + transport.sum() + meeting.sum() + rework.sum() + glue.sum(); }
-  double decide_fraction() const { const double t = total(); return t > 0 ? decide.sum() / t : 0.0; }
-  void reset() { fetch.reset(); frame.reset(); decide.reset(); commit.reset(); transport.reset(); meeting.reset(); rework.reset(); glue.reset(); }
-};
-
-struct HumanStats {
-  TimeLedger time;
-  std::vector<TimeLedger> by_class;
-  Acc completeness, hops, cycle_days;
-  uint64_t n_decided = 0, n_escalated = 0, n_held = 0, n_meetings = 0;
-  uint64_t n_breached = 0;                 // decided after the deadline
-  double   attention_wasted = 0;           // budget unspent because nobody could reach the work
-  double   attention_spent = 0;
-  std::vector<uint64_t> decided_by_class;
-  void init(int NC) { by_class.assign(NC, TimeLedger{}); decided_by_class.assign(NC, 0); }
-};
 
 // Cost of one fetch: opening an application and finding the field. Includes the
 // tax nobody counts — the app's own load time, the login, the search.
@@ -120,9 +100,9 @@ inline void build_meetings(const Firm& f, const std::vector<std::vector<int>>& r
 // ----------------------------------------------------------------------------
 struct WorkResult { float minutes = 0; bool progressed = false; bool terminal = false; };
 
-inline WorkResult human_work(World& w, Firm& f, Tape& tape, HumanStats& st,
+inline WorkResult human_work(World& w, Ledger& L, Firm& f, Tape& tape, HumanStats& st,
                              uint32_t idx, int seat_id, uint32_t day) {
-  Obligation& o = w.ob[idx];
+  Obligation& o = L.ob[idx];
   Seat& s = f.seat[seat_id];
   const ClassSpec& sp = cls_spec(o.cls);
   const uint64_t seed = w.seed;
@@ -262,7 +242,7 @@ inline WorkResult human_work(World& w, Firm& f, Tape& tape, HumanStats& st,
 // ----------------------------------------------------------------------------
 // ONE DAY AT ACME
 // ----------------------------------------------------------------------------
-inline void human_day(World& w, Firm& f, Tape& tape, HumanStats& st,
+inline void human_day(World& w, Ledger& L, Firm& f, Tape& tape, HumanStats& st,
                       const std::vector<std::vector<int>>& rep, uint32_t day) {
   // reset the day's attention
   for (Seat& s : f.seat) { s.attn_left = s.attention; s.meetings_today = 0; s.fatigue *= 0.55f; }
@@ -302,7 +282,7 @@ inline void human_day(World& w, Firm& f, Tape& tape, HumanStats& st,
   // --- cross-wire coordination: one touch per live dependency, because two
   // people who cannot see the same state must talk to each other
   int deps_live = 0;
-  for (uint32_t i : w.open_idx) if (w.ob[i].dep >= 0 && w.ob[w.ob[i].dep].state != OB_SETTLED) ++deps_live;
+  for (uint32_t i : L.open_idx) if (L.ob[i].dep >= 0 && L.ob[L.ob[i].dep].state != OB_SETTLED) ++deps_live;
   if (deps_live > 0 && day % 7 < 5) {
     const float per = 12.f;
     float charged = 0.f;
@@ -330,13 +310,13 @@ inline void human_day(World& w, Firm& f, Tape& tape, HumanStats& st,
   for (const Seat& s : f.seat)
     if (s.fn == FN_E && s.kind == SK_IC)
       for (int c = 0; c < 32; ++c) if ((s.spec >> c) & 1u) pool[c].push_back(s.id);
-  for (uint32_t i : w.open_idx) {
-    const Obligation& q = w.ob[i];
+  for (uint32_t i : L.open_idx) {
+    const Obligation& q = L.ob[i];
     if (q.seat >= 0 && q.state != OB_SETTLED && q.state != OB_DECIDED)
       proj[q.seat] += 20.f + 9.0f * (float)cls_spec(q.cls).n_systems;
   }
-  for (uint32_t i : w.open_idx) {
-    Obligation& o = w.ob[i];
+  for (uint32_t i : L.open_idx) {
+    Obligation& o = L.ob[i];
     if (o.state != OB_OPEN) continue;
     const ClassSpec& sp = cls_spec(o.cls);
     const auto& P = pool[o.cls < 32 ? o.cls : 0];
@@ -356,8 +336,8 @@ inline void human_day(World& w, Firm& f, Tape& tape, HumanStats& st,
   // runs out. What is left is held — and a hold is a row, with its margin, so
   // that silence is auditable rather than merely absent.
   std::vector<std::vector<uint32_t>> queue(f.size());
-  for (uint32_t i : w.open_idx) {
-    const Obligation& o = w.ob[i];
+  for (uint32_t i : L.open_idx) {
+    const Obligation& o = L.ob[i];
     if ((o.state == OB_QUEUED || o.state == OB_INPROG || o.state == OB_ESCALATED) && o.seat >= 0)
       queue[o.seat].push_back(i);
   }
@@ -365,12 +345,12 @@ inline void human_day(World& w, Firm& f, Tape& tape, HumanStats& st,
     auto& q = queue[sid];
     if (q.empty()) continue;
     std::sort(q.begin(), q.end(), [&](uint32_t a, uint32_t b) {
-      if (w.ob[a].day_due != w.ob[b].day_due) return w.ob[a].day_due < w.ob[b].day_due;
-      return w.ob[a].id < w.ob[b].id; });
+      if (L.ob[a].day_due != L.ob[b].day_due) return L.ob[a].day_due < L.ob[b].day_due;
+      return L.ob[a].id < L.ob[b].id; });
     Seat& s = f.seat[sid];
     for (uint32_t i : q) {
-      Obligation& o = w.ob[i];
-      if (o.dep >= 0 && w.ob[o.dep].state != OB_SETTLED && w.ob[o.dep].state != OB_DECIDED) {
+      Obligation& o = L.ob[i];
+      if (o.dep >= 0 && L.ob[o.dep].state != OB_SETTLED && L.ob[o.dep].state != OB_DECIDED) {
         tape.put(R_HOLD, day, o.id, o.cls, sid, ARM_HUMAN, 1 /*blocked*/, 0, o.margin, 0.f, 0, 0, 0, PROV_H);
         ++st.n_held; continue;
       }
@@ -378,7 +358,7 @@ inline void human_day(World& w, Firm& f, Tape& tape, HumanStats& st,
         tape.put(R_HOLD, day, o.id, o.cls, sid, ARM_HUMAN, 2 /*no attention*/, 0, o.margin, 0.f, 0, 0, 0, PROV_H);
         ++st.n_held; continue;
       }
-      const WorkResult r = human_work(w, f, tape, st, i, sid, day);
+      const WorkResult r = human_work(w, L, f, tape, st, i, sid, day);
       s.attn_left -= r.minutes;
       st.attention_spent += r.minutes;
       if (s.attn_left < 0) s.attn_left = 0;

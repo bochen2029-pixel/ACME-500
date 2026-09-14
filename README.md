@@ -2,7 +2,7 @@
 
 **A virtual enterprise of 500 knowledge workers, and its automation, in one C++17 binary with no dependencies. It exists so that a method for automating organizations can be graded by a world that answers in seconds instead of quarters, and can fail cheaply before any real firm is asked to be the grader.**
 
-3,716 lines on branch `v2` (v1 is tag `v1-step-A`). Five modes. Twenty oracles in the binary and two on the source tree, each carrying a lie that it must be seen to catch. Every number it prints is a reading, and the readings that turned out wrong are printed as retractions in the receipts.
+3,827 lines on branch `v2` (v1 is tag `v1-step-A`). Five modes. Twenty oracles in the binary and three on the source tree, each carrying a lie that it must be seen to catch. Every number it prints is a reading, and the readings that turned out wrong are printed as retractions in the receipts.
 
 ```
 g++ -O2 -std=c++17 -Iinclude -Wall -Wextra -ffp-contract=off src/main.cpp -o acme
@@ -83,10 +83,12 @@ Every oracle carries a lie. Under `--lie N` the mechanism oracle N claims to tes
 | O11 | effects carry inverses; the window closes at settlement | PASS, 60 effects committed and unwound; post-settlement reversal refused |
 | O12 | the origin-fit cascade promises an impossible company | PASS, alpha 0.145 vs 0.197 planted; F 17.6 vs 9.0; gap at E=200 is 9 seats |
 | O13 | the measured decide fraction ranks the planted intensity | PASS, partial Spearman 0.963 over 24 classes, n_systems controlled; the LEVEL is never recovered |
-| O28 | no dead physics: every free function in firm.h/world.h has a caller | PASS, 13 functions |
+| O28 | no dead physics: every free function in firm.h/world.h has a caller | PASS, 12 functions |
 | O25a | the kernel reads no clock: machine.h, solver.h, ledger.h, report.h read time only from TICK rows | PASS |
+| O17 | the machine links without the plant: the kernel headers compile under -DACME_NO_PLANT and one include of world.h is refused | PASS |
 
-*Regenerated from `receipts/step-b-remediation-2026-09-14/selftest.txt` and `o28_o25a.txt` by `tools/oracle_table.py`, never edited by hand. O25a is a source scan (no clock read in the kernel's files); the dynamic O25 (same rows at different wall spacing give identical verdicts) waits for the TICK-driven loop of step D.*
+
+*Regenerated from `receipts/step-c0-2026-09-14/selftest.txt`, `o28_o25a.txt` and `o17.txt` by `tools/oracle_table.py`, never edited by hand. O25a is a source scan (no clock read in the kernel's files); the dynamic O25 (same rows at different wall spacing give identical verdicts) waits for the TICK-driven loop of step D.*
 
 ## How it is built
 

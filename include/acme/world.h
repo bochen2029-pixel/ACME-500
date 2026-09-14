@@ -28,8 +28,13 @@
 //  class and the compile step must MEASURE it without being shown it.
 // ============================================================================
 #pragma once
+#ifdef ACME_NO_PLANT
+#error "world.h is the PLANT: planted truth and the generators. The machine's translation unit must not include it (oracle O17)."
+#endif
 #include "core.h"
 #include "firm.h"
+#include "ledger.h"
+#include "port.h"
 
 namespace acme {
 
@@ -49,52 +54,12 @@ struct TrueSpec {
   float system_mass = 0.f;
 };
 
-enum ObState : uint8_t {
-  OB_OPEN = 0,      // arrived, nobody has it
-  OB_QUEUED,        // assigned to a seat's queue
-  OB_INPROG,        // being worked; partial context assembled
-  OB_DECIDED,       // a terminal decision was made; effect out
-  OB_ESCALATED,     // handed up; waiting on a warrant seat
-  OB_SETTLED,       // the world graded it
-  OB_N
-};
-
-struct Obligation {
-  uint32_t id;
-  uint16_t cls;
-  uint32_t day_open;
-  uint32_t day_due;
-  uint32_t day_decided = 0;
-  uint32_t day_settled = 0;
-  int32_t  seat = -1;           // who holds it
-  uint8_t  state = OB_OPEN;
-  uint8_t  outcome = OK_NONE;
-  uint8_t  hops = 0;            // how many seats it has passed through
-  uint8_t  escalations = 0;
-  float    completeness = 0.f;  // context actually in hand at decision time
-  float    work_done = 0.f;
-  float    margin = 0.f;        // the decider's own confidence
-  uint32_t systems_opened = 0;  // bitmask of systems fetched
-  uint32_t last_touch = 0;      // for context decay
-  int      decision = -1;       // the terminal choice, class-specific
-  uint8_t  by_machine = 0;
-  // HOW THE DECISION LEFT THE BUILDING. 0 a person decided; 1 the resident acted
-  // unattended; 2 the resident drafted and a person keyed it; 3 a rented mind
-  // acted; 4 a signer executed the resident's choice verbatim. Only 1 and 3 are
-  // the wager. The first run counted drafts as machine-chosen outcomes, so the
-  // canary arithmetic governed 402 instances while 96,635 drafts fed the ladder.
-  uint8_t  via = 0;
-  uint8_t  band = 0;
-  int      dep = -1;            // waits on another obligation
-};
-
+// THE PLANT. Since C0 this holds only the planted truth and the generators;
+// the cells, the open set and the clock live in the Ledger (ledger.h), which
+// the plant's arm and the hand mutate while writing the rows that describe it.
 struct World {
   uint64_t seed;
-  uint32_t day = 0;
-  std::vector<Obligation> ob;
   std::vector<TrueSpec>   spec;      // per class, ground truth
-  std::vector<uint32_t>   open_idx;  // indices of obligations not yet settled
-  uint32_t next_id = 1;
   // planted per-class truth the compile step must recover
   std::vector<float> tacit;          // coverage ceiling = 1 - tacit
   std::vector<int>   n_det;
@@ -169,13 +134,13 @@ inline int arrivals_today(const World& w, int c, uint32_t day) {
   return k - 1;
 }
 
-inline void world_arrive(World& w, Tape& tape, uint32_t day) {
+inline void world_arrive(World& w, Ledger& L, Tape& tape, uint32_t day) {
   for (int c = 0; c < w.NC; ++c) {
     const ClassSpec& s = cls_spec(c);
     const int k = arrivals_today(w, c, day);
     for (int i = 0; i < k; ++i) {
       Obligation o{};
-      o.id = w.next_id++;
+      o.id = L.next_id;
       o.cls = (uint16_t)c;
       o.day_open = day;
       const int slack = 3 + (int)(u01(w.seed, 2100 + c, o.id) * 12);
@@ -184,16 +149,15 @@ inline void world_arrive(World& w, Tape& tape, uint32_t day) {
       o.last_touch = day;
       // ~9% of obligations wait on another one — the dependency that makes the
       // period a joint problem rather than N independent ones
-      if (!w.ob.empty() && ucoin(w.seed, 2200, o.id, 0.09f)) {
-        const int j = ubelow(w.seed, 2201, o.id, (int)w.ob.size());
-        if (w.ob[j].state != OB_SETTLED) o.dep = (int)j;
+      if (!L.ob.empty() && ucoin(w.seed, 2200, o.id, 0.09f)) {
+        const int j = ubelow(w.seed, 2201, o.id, (int)L.ob.size());
+        if (L.ob[j].state != OB_SETTLED) o.dep = (int)j;
       }
-      w.open_idx.push_back((uint32_t)w.ob.size());
-      w.ob.push_back(o);
+      L.open_cell(o);
       // v2: the due day and the dependency are ON THE ROW (F19). A cold fold of
       // the tape can now rebuild the cell; v1 wrote a = b = 0 here.
       tape.put(R_ARRIVE, day, o.id, c, -2, ARM_GOVERNOR, (int)o.day_due,
-               o.dep >= 0 ? (int)w.ob[(size_t)o.dep].id : -1, 0.f, s.value);
+               o.dep >= 0 ? (int)L.ob[(size_t)o.dep].id : -1, 0.f, s.value);
     }
   }
 }
@@ -270,20 +234,12 @@ inline float completeness_from(const World& w, int c, uint32_t systems_mask,
   return std::min(1.f, got);
 }
 
-// Memory decays. A case you last touched nine days ago costs you re-acquisition,
-// and this is the reason a human's context window is the org chart's real
-// constraint: skulls do not hold state between turns either.
-inline float decay(uint32_t now, uint32_t last_touch, float half_life_days = 4.0f) {
-  const float dt = (float)(now - last_touch);
-  return std::pow(0.5f, dt / std::max(0.5f, half_life_days));
-}
-
 // The world settles what has been decided, after each class's verdict latency.
 // This is the ONLY function that writes an outcome, and it never sees who
 // decided — the grader is exogenous by construction.
-inline void world_settle(World& w, const Firm& f, Tape& tape, uint32_t day) {
-  for (uint32_t idx : w.open_idx) {
-    Obligation& o = w.ob[idx];
+inline void world_settle(World& w, Ledger& L, const Firm& f, Tape& tape, uint32_t day) {
+  for (uint32_t idx : L.open_idx) {
+    Obligation& o = L.ob[idx];
     if (o.state != OB_DECIDED) continue;
     const ClassSpec& s = cls_spec(o.cls);
     if (day < o.day_decided + s.verdict_latency) continue;
@@ -301,10 +257,40 @@ inline void world_settle(World& w, const Firm& f, Tape& tape, uint32_t day) {
     tape.put(R_OUTCOME, day, o.id, o.cls, o.by_machine ? -1 : o.seat, o.by_machine ? ARM_MACHINE : ARM_HUMAN,
              o.outcome, (int)o.via, o.margin, (float)outcome_cost(f.writ, s, o.outcome), o.band, 0, o.via, PROV_D);
   }
-  // compact
-  std::vector<uint32_t> keep; keep.reserve(w.open_idx.size());
-  for (uint32_t i : w.open_idx) if (w.ob[i].state != OB_SETTLED) keep.push_back(i);
-  w.open_idx.swap(keep);
+  L.compact();
 }
+
+// ----------------------------------------------------------------------------
+// THE PLANT BEHIND THE PORT. C0: the machine reads cells through Store::frame
+// and judges them through Judge::read, and what stands behind both is the
+// plant's own arithmetic, bit for bit what v1 computed inline. C1 replaces
+// the coverage with the compile step's estimate and the noise key and the act
+// coin with the judge's own; every number that moves then is named.
+// ----------------------------------------------------------------------------
+struct PlantStore : Store {
+  const World* w;
+  explicit PlantStore(const World* world) : w(world) {}
+  Frame frame(uint32_t oid, int cls, uint32_t systems_mask) const override {
+    Frame f; f.cls = cls; f.oid = oid; f.systems_mask = systems_mask; f.boundary = true;
+    f.coverage_hat = completeness_from(*w, cls, systems_mask, true, 0.f);   // C0: the plant's completeness for the mask
+    f.frame_hash = 0;                                                      // C1: f(rows, template pin, span contents)
+    return f;
+  }
+};
+
+struct PlantJudge : Judge {
+  const World* w;
+  explicit PlantJudge(const World* world) : w(world) {}
+  Proposal read(const Frame& f, float competence, uint64_t noise_key) override {
+    Obligation o{}; o.id = f.oid; o.cls = (uint16_t)f.cls;                  // observe() reads only id and cls
+    const Read r = observe(*w, o, f.systems_mask, f.boundary, 0.f, competence, noise_key);
+    Proposal p; p.choice = r.choice; p.signal = r.signal; p.completeness_hat = r.completeness; p.judge_hash = hash();
+    return p;
+  }
+  // F16 preserved in C0 so the numbers do not move: the coin is still drawn from
+  // the world's seed. C1 keys it on the judge.
+  bool act_coin(int cls, uint32_t oid, float p) override { return u01(w->seed, 7200 + cls, oid) < p; }
+  uint32_t hash() const override { return 0x504C4A31u; }                  // 'PLJ1': the plant's read arithmetic, v1
+};
 
 } // namespace acme

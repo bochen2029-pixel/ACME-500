@@ -60,4 +60,8 @@ if(Python3_Interpreter_FOUND)
   add_test(NAME no_clock_lie COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/dead_symbols.py ${CMAKE_SOURCE_DIR} --o25 --lie)
   set_tests_properties(no_clock     PROPERTIES PASS_REGULAR_EXPRESSION "\\[PASS\\] O25a" FAIL_REGULAR_EXPRESSION "\\[FAIL\\]")
   set_tests_properties(no_clock_lie PROPERTIES PASS_REGULAR_EXPRESSION "\\[PASS\\] O25a" FAIL_REGULAR_EXPRESSION "\\[FAIL\\]")
+  # O17 · the machine links without the plant. A build fact: the kernel's headers
+  # compile under -DACME_NO_PLANT and one include of world.h is refused (the lie).
+  add_test(NAME links_without_plant COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/o17.py ${CMAKE_SOURCE_DIR} ${CMAKE_CXX_COMPILER})
+  set_tests_properties(links_without_plant PROPERTIES PASS_REGULAR_EXPRESSION "\\[PASS\\] O17 " FAIL_REGULAR_EXPRESSION "\\[FAIL\\]")
 endif()

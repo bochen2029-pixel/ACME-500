@@ -1,0 +1,34 @@
+# Receipt · ACME-500 v2 step C0 · consumers onto the fold; the machine links without the plant · 2026-09-14
+
+*Claude Opus 5. Implements step C0 as sequenced in `docs/ARCHITECTURE_v2.md` §14a after the step-B review: the fold stops being a shadow and becomes the thing the numbers come from, with every printed reading byte-identical to v1 because only where a value is read from changed. Branch `v2` of `C:\55555\acme500` (repository `github.com/bochen2029-pixel/ACME-500`, branch `v2`). Built and run under WSL from a fresh copy. Raw outputs in `receipts/step-c0-2026-09-14/` (24 files).*
+
+## 0 · What C0 changed
+
+**The types moved.** `Obligation`, `ObState`, `decay`, `TimeLedger` and `HumanStats` left `world.h`/`human.h` for `ledger.h`, which now includes nothing from the plant. `World` is the **Plant**: seed, planted spec, tacit mass, determinant counts, class count, demand scale, and the generators and the grader (`make_world`, `arrivals_today`, `world_arrive`, `det_value`, `full_signal`, `truth_decision`, `observe`, `completeness_from`, `world_settle`). The cells, the open set and `next_id` live in the **Ledger**, which the plant's arm and the hand mutate directly while writing the rows that describe the mutation, and which the fold rebuilds (O14).
+
+**The port (`port.h`).** `Store::frame(oid, cls, mask) → Frame` and `Judge::read(frame, competence, noise_key) → Proposal`, plus `Judge::act_coin`. The plant implements both at the end of `world.h` (`PlantStore`, `PlantJudge`) with exactly the arithmetic v1 computed inline: `completeness_from` behind `Frame::coverage_hat`, `observe()` behind `read`, and the rented mind's coin still drawn from the world's seed behind `act_coin` (F16 is preserved on purpose in C0 so no number moves; C1 keys it on the judge).
+
+**Every consumer reads the Ledger.** `Resident::period(Ledger&, Firm&, Tape&, day, const Store&, Judge&)` and `Resident::grade(Ledger&, …)`; `replay(const Ledger&, …, const Store&, Judge&)`; `mine_invariants(tape, const Ledger&, NC)`; `score_arm(const Ledger&, Firm)`; `residual_of(lad, demand_scale, C)`; `Integrator::commit/unwind(Ledger&, …)`; `Resident::init(NC, NS, demand_scale, …)` never holds a `World`. `machine.h`, `solver.h`, `report.h` and `ledger.h` include neither `world.h` nor `human.h`.
+
+**O17, a build fact.** `world.h` carries `#ifdef ACME_NO_PLANT → #error`. `tools/o17_machine_tu.cpp` includes every kernel header under the flag, instantiates the period, the replay, the residual, the arm score and the invariant miner against a null store and a null judge, and must compile; `tools/o17_lie_tu.cpp` adds one include of `world.h` and must be refused by the guard. `tools/o17.py` runs both and prints the two battery-style lines; CMake test `links_without_plant`.
+
+```
+  [PASS] O17  the machine links without the plant: ledger.h, port.h, solver.h, machine.h, report.h compile under -DACME_NO_PLANT
+  [PASS] O17  the machine links without the plant: the lie TU (one include of world.h) was refused by the guard   (lie arm)
+```
+
+## 1 · Acceptance · the tape is byte-identical, the readings are byte-identical
+
+`--twin`, `--automate` and `--sim` diffed against the v1 readings (`receipts/step-a-2026-09-14/`): **0 differing lines** in twin and sim; **1** in automate, the replay's wall time (13 ms → 14 ms). The sim's chain head is `b01905e496dba40e…`, identical to the step-B remediation's: **C0 changed no row.** Battery **20 of 20**; eighteen lie arms (0–17), each exit 0 with its lied-to oracle's line PASS; O28, O25a and O17 green on both arms.
+
+## 2 · The tree after C0
+
+3,827 lines. Hashes (sha256, first 16): core.h `63728b6de2b48a78` · firm.h `75b625c084626c65` · world.h `1a92cf7d375ccc21` · human.h `c115d72fa01b8c1a` · ledger.h `43e538c3ab80e49e` · port.h `5192b2fe8ef027ea` · solver.h `67c1bf92bc228f4f` · machine.h `60310876b6468075` · report.h `fb352388176efa5b` · main.cpp `502639365e4323fa` · CMakeLists.txt `b114d7c99f61b572` · tools/o17.py `9e7ca1727b97809c` · tools/o17_machine_tu.cpp `3ccf542dd43d4060` · tools/o17_lie_tu.cpp `7d9f011fe005b62d`.
+
+## 3 · What C0 did not do, precisely
+
+- The machine still reads planted values **through the port**: `Frame::coverage_hat` is the plant's completeness for the mask, `Judge::read` is the plant's read physics with the machine's competence, and `act_coin` is the world's seed. C0 moved the reads behind the seam without changing what stands behind it; C1 changes what stands behind it and names every delta.
+- `cls_spec(c).decide_frac` (planted, in `core.h`'s class table) is still read by the head (`FT_DFRAC`), by `would_cost` and by the counterparty rule; the `Schema`/`Planted` split of the class table is C1.
+- The three prints the review asked for in C0 — minutes by via, the binding reason per band, the frame split into wait and coverage — are **not yet printed**; they are the first item of C1 so that they land beside the numbers they explain.
+- `STRATUM`, `COUNSEL`, `RECEIPT`, `CORRECTION` are declared and not emitted.
+- `Ledger` still keeps `idx_of_oid` as a dense vector sized by the largest oid; a real lane's ids will need a map.

@@ -47,7 +47,7 @@
 #pragma once
 #include "core.h"
 #include "firm.h"
-#include "world.h"
+#include "ledger.h"   // the hand mutates the LEDGER; solver.h never sees the plant (O17)
 
 namespace acme {
 
@@ -345,8 +345,8 @@ struct Integrator {
   std::vector<Effect> ledger;
   uint64_t n_undone = 0;
 
-  void commit(World& w, Tape& tape, uint32_t idx, int decision, uint32_t day, float margin, int band, int via = 1) {
-    Obligation& o = w.ob[idx];
+  void commit(Ledger& L, Tape& tape, uint32_t idx, int decision, uint32_t day, float margin, int band, int via = 1) {
+    Obligation& o = L.ob[idx];
     Effect e{}; e.oid = o.id; e.day = day; e.cls = o.cls; e.decision = decision;
     e.prev_state = o.state; e.prev_seat = o.seat; e.prev_decided = o.day_decided;
     e.reversible = cls_spec(o.cls).reversible;
@@ -361,11 +361,11 @@ struct Integrator {
   // An effect is reversible only until the world reacts to it, and the world's
   // reaction is the outcome being graded. So the window closes at settlement,
   // and a reversal after that is reclassified irreversible the same day.
-  bool unwind(World& w, Tape& tape, size_t k, uint32_t day) {
+  bool unwind(Ledger& L, Tape& tape, size_t k, uint32_t day) {
     if (k >= ledger.size()) return false;
     const Effect& e = ledger[k];
     if (!e.reversible) return false;
-    for (Obligation& o : w.ob) {
+    for (Obligation& o : L.ob) {
       if (o.id != e.oid) continue;
       if (o.state == OB_SETTLED) return false;            // the world already reacted
       o.state = e.prev_state; o.seat = e.prev_seat; o.day_decided = e.prev_decided; o.by_machine = 0; o.via = 0;
