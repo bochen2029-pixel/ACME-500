@@ -12,9 +12,9 @@ python -m http.server 8766
 
 then open `http://127.0.0.1:8766/ACME-500%20Observer.dc.html`. `?raf=1&day=N&cam=X` drives it headless. Cameras: `ORBIT ISO DOCK BASEMENT ANNEX TOP LEDGER CORE WING`.
 
-## One file is deliberately missing
+## What is whose
 
-The page was produced with Claude Design and its property panel expects that tool's runtime, `support.js`, beside the HTML. That file is generated code from the design tool and is not part of this repository's licence, so it is not committed. It is present in the original design export; place it beside the HTML to run the page as exported. Everything under `acme/` and `golden/` is this repository's own.
+The page was produced with Claude Design. `support.js` is that tool's runtime as it came in the export, included so the page runs as exported; it is generated code and is not edited here. Everything under `acme/` and `golden/`, the contract, the world, the fold and the golden, is this repository's own.
 
 ## The golden is synthetic
 
