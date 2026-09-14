@@ -72,14 +72,20 @@ static void rule(const char* t) { std::printf("\n=== %s ", t); for (int i = (int
 // ----------------------------------------------------------------------------
 struct Run { World w; Firm f; Tape tape; HumanStats hs; };
 
+// mode * 10 + switch, as the HEADER row carries it: world 0 synthetic · 1 fitted · 2 replay · 3 real;
+// switch 0 off · 1 shadow · 2 live. ACME is (synthetic, live) by construction.
+enum { MODE_SYNTHETIC = 0, SW_OFF = 0, SW_SHADOW = 1, SW_LIVE = 2 };
+
 static void run_human(Run& R, int days, bool chain = true) {
   R.tape.chaining = chain;
   R.hs.init(R.w.NC);
   auto rep = reports_of(R.f);
+  if (R.tape.size() == 0) R.tape.header(MODE_SYNTHETIC, SW_LIVE, schema_hash());
   for (int d = 0; d < days; ++d) {
+    R.tape.tick((uint32_t)d);                       // v2: the clock is a row
     world_arrive(R.w, R.tape, (uint32_t)d);
-    human_day(R.w, R.f, R.tape, R.hs, rep, (uint32_t)d, 0);
-    world_settle(R.w, R.f, R.tape, (uint32_t)d, 0);
+    human_day(R.w, R.f, R.tape, R.hs, rep, (uint32_t)d);
+    world_settle(R.w, R.f, R.tape, (uint32_t)d);
   }
 }
 
@@ -154,10 +160,11 @@ static AutoOut run_machine(const Args& a, Run& R, int warm_days, int total_days,
   auto rep = reports_of(R.f);
   t0 = now_s();
   for (int d = warm_days; d < total_days; ++d) {
+    R.tape.tick((uint32_t)d);
     world_arrive(R.w, R.tape, (uint32_t)d);
-    res.period(R.w, R.f, R.tape, (uint32_t)d, 1);      // the resident goes first: it never sleeps
-    human_day(R.w, R.f, R.tape, R.hs, rep, (uint32_t)d, 1);
-    world_settle(R.w, R.f, R.tape, (uint32_t)d, 1);
+    res.period(R.w, R.f, R.tape, (uint32_t)d);         // the resident goes first: it never sleeps
+    human_day(R.w, R.f, R.tape, R.hs, rep, (uint32_t)d);
+    world_settle(R.w, R.f, R.tape, (uint32_t)d);
     res.grade(R.w, R.f, R.tape, (uint32_t)d);
     ++out.periods;
   }
@@ -380,12 +387,24 @@ struct Patch { const char* name; int span; float thin; float eps; float kappa_ma
 
 static double eval_patch(const Args& a, const Patch& p, uint64_t seed, int days) {
   Run R; R.f = build_acme(a.n, p.span, seed); R.w = make_world(seed); R.w.demand_scale = a.demand;
+  // v2: every patch lands as a PATCH row carrying its inverse (margin = old, value = new)
+  // before the run, so a fold of the fork's tape knows which universe it is.
+  R.tape.header(MODE_SYNTHETIC, SW_LIVE, schema_hash());
+  const Writ base;
+  auto patch_row = [&](int kind, int param, float oldv, float newv) {
+    if (oldv != newv) R.tape.put(R_PATCH, 0, 0, param < 0 ? 0 : param, -3, ARM_GOVERNOR, kind, param, oldv, newv);
+  };
+  patch_row(0, 0, (float)a.span, (float)p.span);
+  patch_row(2, 0, base.thin_margin, p.thin);
+  patch_row(2, 1, base.eps_floor, p.eps);
+  patch_row(2, 2, base.kappa_max, p.kappa_max);
   R.f.writ.thin_margin = p.thin; R.f.writ.eps_floor = p.eps; R.f.writ.kappa_max = p.kappa_max;
   if (p.instrument_cls >= 0 && p.instrument_cls < R.w.NC) {
     // BUY THE LANE: move this class's tacit determinants into a system. This is
     // the only lever that raises coverage, and it costs money rather than model
     // quality — which is the whole point of measuring coverage separately.
     TrueSpec& t = R.w.spec[p.instrument_cls];
+    patch_row(1, p.instrument_cls, t.tacit_mass, 0.f);
     for (Determinant& d : t.det) if (d.where == DW_TACIT) { d.where = DW_SYSTEM; d.system = 0; }
     t.tacit_mass = 0.f; R.w.tacit[p.instrument_cls] = 0.f;
   }
@@ -735,16 +754,16 @@ static int cmd_selftest(const Args& a) {
     for (size_t i = 0; i < R.w.ob.size(); ++i) before[i] = R.w.ob[i].state;
     int n = 0;
     for (uint32_t i = 0; i < (uint32_t)R.w.ob.size() && n < 60; ++i)
-      if (cls_spec(R.w.ob[i].cls).reversible) { ig.commit(R.w, t, i, 1, 0, 1, 1.5f, 2); ++n; }
-    for (size_t k = ig.ledger.size(); k-- > 0; ) ig.unwind(R.w, t, k, 1, 1);
+      if (cls_spec(R.w.ob[i].cls).reversible) { ig.commit(R.w, t, i, 1, 0, 1.5f, 2); ++n; }
+    for (size_t k = ig.ledger.size(); k-- > 0; ) ig.unwind(R.w, t, k, 1);
     bool restored = true;
     for (size_t i = 0; i < R.w.ob.size(); ++i) if (R.w.ob[i].state != before[i]) restored = false;
     // and after the world reacts, the inverse must be refused
-    ig.commit(R.w, t, 0, 1, 2, 1, 1.f, 2);
+    ig.commit(R.w, t, 0, 1, 2, 1.f, 2);
     R.w.ob[0].state = OB_SETTLED;
-    const bool refused = !ig.unwind(R.w, t, ig.ledger.size() - 1, 3, 1);
+    const bool refused = !ig.unwind(R.w, t, ig.ledger.size() - 1, 3);
     bool ok = restored && refused && (n > 20);
-    if (LIE == 11) ok = ig.unwind(R.w, t, ig.ledger.size() - 1, 3, 1);       // THE LIE
+    if (LIE == 11) ok = ig.unwind(R.w, t, ig.ledger.size() - 1, 3);       // THE LIE
     snprintf(buf, sizeof buf, "(%d effects committed and unwound; post-settlement reversal refused)", n);
     ck(LIE == 11 ? !ok : ok, "O11  effects carry inverses; the window closes at settlement", buf);
   }

@@ -218,7 +218,10 @@ struct Ladder {
       if (enough && L.logE > std::log(1.0 / alpha_promote) && L.rung < 5) {
         L.rung += 1; L.logE = 0; L.expiry_day = (int)day + 3 * term_days;
       }
-      if (L.rung != before) tape.put(R_LICENSE, day, 0, c, -1, 1, L.rung, b, (float)L.logE, (float)L.kappa(), b);
+      if (L.rung != before) tape.put(R_LICENSE, day, 0, c, -3, ARM_GOVERNOR, L.rung, b, (float)L.logE, (float)L.kappa(), b);
+      // v2: kappa is a row once a term, per class-band that has removed anything
+      if (day > 0 && (int)(day % (uint32_t)term_days) == 0 && L.sup_removed > 0.0)
+        tape.put(R_KAPPA, day, 0, c, -3, ARM_GOVERNOR, (int)L.sup_created, (int)L.sup_removed, 0.f, (float)L.kappa(), b);
     }
   }
 };
@@ -314,7 +317,7 @@ inline int license_from_history(Ladder& lad, const ReplayOut& R, uint32_t day, T
     if (p_agree >= firm_base - 0.01 && b >= 1) {
       L.history_licensed = true;
       if (L.rung < 1) { L.rung = 1; ++promoted;
-        tape.put(R_LICENSE, day, 0, c, -1, 1, L.rung, b, (float)p_agree, (float)firm_base, b, 1); }
+        tape.put(R_LICENSE, day, 0, c, -3, ARM_GOVERNOR, L.rung, b, (float)p_agree, (float)firm_base, b, RF_HISTORY); }
     }
   }
   return promoted;
@@ -382,12 +385,15 @@ struct Resident {
     return (float)std::min(0.35, std::max((double)wr.eps_floor, L.n0 / per_term));
   }
 
-  void period(World& w, Firm& f, Tape& tape, uint32_t day, int arm);
+  void period(World& w, Firm& f, Tape& tape, uint32_t day);
   void grade(World& w, const Firm& f, Tape& tape, uint32_t day);
+  // The judge behind the port, named by hash on every proposal row. Today the
+  // only judge is the plant's read arithmetic (step C installs the port).
+  static uint32_t judge_hash() { return 0x504C4A31u; }   // 'PLJ1': PlantJudge, v1 arithmetic
 };
 
 // One period of the resident. The whole thing is a solve, a gate and a hand.
-inline void Resident::period(World& w, Firm& f, Tape& tape, uint32_t day, int arm) {
+inline void Resident::period(World& w, Firm& f, Tape& tape, uint32_t day) {
   // --- the adjudication budget: the humans who are still here. This is the
   // ceiling on the whole enterprise and it is deliberately small.
   adjudication_budget_min = 0;
@@ -470,6 +476,10 @@ inline void Resident::period(World& w, Firm& f, Tape& tape, uint32_t day, int ar
     g.in_audit  = (u01(wr.salt, 7100 + c, o.id) < std::max(0.01f, 1.0f / std::sqrt(3.0f * std::max(1.f, (float)lad.at(c,b).n_machine))));
     g.budget_left = (float)(adjudication_budget_min - adj_used * 45.0);
 
+    // v2: the proposal is a row BEFORE the verdict, whatever the gate then says.
+    // It feeds nothing; it is what the machine thought, on the record.
+    tape.put(R_PROPOSAL, day, o.id, c, -1, ARM_MACHINE, mr.choice, (int)judge_hash(), direction, mach_complete[i], b, 0, 0, PROV_M);
+
     const GateOut v = gate(g, wr);
     ++st.reason_count[v.reason];
     st.margin_abs.add(std::fabs(direction));
@@ -483,7 +493,7 @@ inline void Resident::period(World& w, Firm& f, Tape& tape, uint32_t day, int ar
     switch (v.verdict) {
       case V_ACT: {
         o.completeness = mach_complete[i];
-        hand.commit(w, tape, idx, mr.choice, day, arm, direction, b, 1);   // via 1: the wager
+        hand.commit(w, tape, idx, mr.choice, day, direction, b, 1);   // via 1: the wager
         ++st.acted; ++st.acted_by_class[c];
         st.completeness.add(o.completeness);
         st.sup_removed_min += would_cost;
@@ -501,7 +511,7 @@ inline void Resident::period(World& w, Firm& f, Tape& tape, uint32_t day, int ar
         const float boost = 0.72f;
         if (u01(w.seed, 7200 + c, o.id) < boost) {
           o.completeness = fr.completeness;
-          hand.commit(w, tape, idx, fr.choice, day, arm,
+          hand.commit(w, tape, idx, fr.choice, day,
                       direction + (direction > 0 ? 0.9f : -0.9f), b, 3);     // via 3: a rented mind acted
           ++st.acted; ++st.acted_by_class[c];
           st.sup_removed_min += would_cost;
@@ -509,7 +519,8 @@ inline void Resident::period(World& w, Firm& f, Tape& tape, uint32_t day, int ar
         } else {
           o.state = OB_ESCALATED; ++st.warrant; ++adj_used;
           st.sup_created_min += 22.0; lad.at(c, b).sup_created += 22.0;
-          tape.put(R_ESCALATE, day, o.id, c, -1, arm, 0, 0, direction, sp.value, b);
+          // v2: a = the seat that keeps it (the resident escalates without moving it), so a fold does not reseat the cell
+          tape.put(R_ESCALATE, day, o.id, c, -1, ARM_MACHINE, o.seat, o.escalations, direction, sp.value, b, 0, 0, PROV_M);
         }
         break;
       }
@@ -522,7 +533,7 @@ inline void Resident::period(World& w, Firm& f, Tape& tape, uint32_t day, int ar
         st.sup_removed_min += would_cost - review;
         lad.at(c, b).sup_removed += std::max(0.0, would_cost - review);
         o.completeness = mach_complete[i];
-        hand.commit(w, tape, idx, mr.choice, day, arm, direction, b, 2);   // via 2: assisted, never the wager
+        hand.commit(w, tape, idx, mr.choice, day, direction, b, 2);   // via 2: assisted, never the wager
         if (v.reason == RS_AUDIT) ++st.audit;
         break;
       }
@@ -535,12 +546,12 @@ inline void Resident::period(World& w, Firm& f, Tape& tape, uint32_t day, int ar
         // the signer executes the machine's choice verbatim on the stratum; a
         // refusal is a veto ROW and grades nothing
         o.completeness = mach_complete[i];
-        hand.commit(w, tape, idx, mr.choice, day, arm, direction, b, 4);   // via 4: assisted, never the wager
+        hand.commit(w, tape, idx, mr.choice, day, direction, b, 4);   // via 4: assisted, never the wager
         break;
       }
       default: {
         ++st.held;
-        tape.put(R_HOLD, day, o.id, c, -1, arm, v.reason, b, direction, sp.value, b);
+        tape.put(R_HOLD, day, o.id, c, -1, ARM_MACHINE, v.reason, b, direction, sp.value, b, 0, 0, PROV_M);
         break;
       }
     }

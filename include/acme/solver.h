@@ -321,14 +321,15 @@ struct Integrator {
   std::vector<Effect> ledger;
   uint64_t n_undone = 0;
 
-  void commit(World& w, Tape& tape, uint32_t idx, int decision, uint32_t day, int arm, float margin, int band, int via = 1) {
+  void commit(World& w, Tape& tape, uint32_t idx, int decision, uint32_t day, float margin, int band, int via = 1) {
     Obligation& o = w.ob[idx];
     Effect e{}; e.oid = o.id; e.day = day; e.cls = o.cls; e.decision = decision;
     e.prev_state = o.state; e.prev_seat = o.seat; e.prev_decided = o.day_decided;
     e.reversible = cls_spec(o.cls).reversible;
-    // THE INVERSE IS RECORDED BEFORE THE EFFECT LEAVES.
-    tape.put(R_EFFECT, day, o.id, o.cls, -1, arm, decision, (int)e.prev_state, margin,
-             cls_spec(o.cls).value, band, e.reversible);
+    // THE INVERSE IS RECORDED BEFORE THE EFFECT LEAVES. v2: the row carries the
+    // via, so a fold knows whether this was the wager or a draft a person keyed.
+    tape.put(R_EFFECT, day, o.id, o.cls, -1, ARM_MACHINE, decision, (int)e.prev_state, margin,
+             cls_spec(o.cls).value, band, e.reversible ? RF_REVERSIBLE : 0, via, PROV_M);
     ledger.push_back(e);
     o.decision = decision; o.state = OB_DECIDED; o.day_decided = day; o.by_machine = 1; o.band = (uint8_t)band; o.via = (uint8_t)via;
     o.margin = margin;
@@ -336,7 +337,7 @@ struct Integrator {
   // An effect is reversible only until the world reacts to it, and the world's
   // reaction is the outcome being graded. So the window closes at settlement,
   // and a reversal after that is reclassified irreversible the same day.
-  bool unwind(World& w, Tape& tape, size_t k, uint32_t day, int arm) {
+  bool unwind(World& w, Tape& tape, size_t k, uint32_t day) {
     if (k >= ledger.size()) return false;
     const Effect& e = ledger[k];
     if (!e.reversible) return false;
@@ -344,7 +345,7 @@ struct Integrator {
       if (o.id != e.oid) continue;
       if (o.state == OB_SETTLED) return false;            // the world already reacted
       o.state = e.prev_state; o.seat = e.prev_seat; o.day_decided = e.prev_decided; o.by_machine = 0; o.via = 0;
-      tape.put(R_UNDO, day, o.id, o.cls, -1, arm, e.decision, 0);
+      tape.put(R_UNDO, day, o.id, o.cls, -1, ARM_MACHINE, e.decision, (int)e.prev_state, 0.f, 0.f, 0, 0, 0, PROV_M);
       ++n_undone; return true;
     }
     return false;

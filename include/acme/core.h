@@ -168,42 +168,64 @@ struct Blake2b {
 // ----------------------------------------------------------------------------
 enum RecType : uint16_t {
   R_NONE = 0,
-  R_ARRIVE,      // an obligation opened at the boundary
-  R_ASSIGN,      // a seat took it (human or resident)
-  R_HOLD,        // a decision NOT to act, with its margin. The majority of rows.
-  R_DECIDE,      // a terminal decision was made
-  R_EFFECT,      // an effect left through the hand, with its inverse recorded first
+  R_ARRIVE,      // an obligation opened at the boundary. a = day_due, b = the oid it waits on or -1
+  R_ASSIGN,      // a seat took it (human or resident). b = hops
+  R_HOLD,        // a decision NOT to act, with its margin. The majority of rows. a = reason
+  R_DECIDE,      // a terminal decision was made by a person. a = decision, b = hops
+  R_EFFECT,      // an effect left through the hand, with its inverse recorded first. a = decision, b = prev_state
   R_UNDO,        // the inverse was applied
-  R_ESCALATE,    // handed to a warrant seat
-  R_OUTCOME,     // the world graded it. THE ONLY THING THAT LICENSES ANYTHING.
-  R_CONTEXT,     // a fetch: which system, how many fields, how stale
+  R_ESCALATE,    // handed up. a = the receiving seat (or the current seat when the resident escalates), b = escalations
+  R_OUTCOME,     // the world graded it. THE ONLY THING THAT LICENSES ANYTHING. a = kind, b = via, seat = the decider
+  R_CONTEXT,     // a fetch: which system (a), minutes (value); flags bit2 = the fetch was LOST to decay
   R_MEETING,     // interior coordination — recorded ONLY so it can be priced and deleted
-  R_TICK,        // the clock moved; the world never dilates
-  R_LICENSE,     // a class-band changed rung
-  R_KAPPA,       // supervision created / removed, per class
-  R_PATCH,       // a structural change with its inverse
+  R_TICK,        // the clock moved; the world never dilates. a = period, b = rows in the previous period
+  R_LICENSE,     // a class-band changed rung. a = rung, b = band
+  R_KAPPA,       // supervision created / removed, per class-band, per term
+  R_PATCH,       // a structural change with its inverse. margin = old value, value = new value
   R_NOTE,
+  // ---- v2 (2026-09-14): the rows the fold was missing ----
+  R_HEADER,      // first row of a tape: a = mode*10 + switch, b = schema hash, value = record version
+  R_PROPOSAL,    // the judge's proposal on a cell, BEFORE the gate's verdict. a = choice, b = judge hash,
+                 // margin = direction, value = completeness_hat. Recorded; feeds nothing.
+  R_STRATUM,     // the governor drew this oid into a stratum this period. a = 1 canary / 2 audit / 3 retained
+  R_COUNSEL,     // a rented mind's proposal, memoized on (oid, frame hash). a = judge hash, b = frame hash
+  R_ACT,         // a human act, priced: a = kind (0 fetch 1 frame 2 decide 3 commit 4 transport 5 rework 6 glue 7 meeting),
+                 // value = minutes, margin = completeness (on a decide act)
+  R_RECEIPT,     // the executor confirmed (b = 0), refused (1) or failed (2) an effect. Never written by the machine.
+  R_CORRECTION,  // a later reply corrected a reading: a = the corrected row's index, b = the reading judge's hash
   R_N
 };
+enum ActKind : uint8_t { ACT_FETCH = 0, ACT_FRAME, ACT_DECIDE, ACT_COMMIT, ACT_TRANSPORT, ACT_REWORK, ACT_GLUE, ACT_MEETING, ACT_N };
+enum Prov : uint8_t { PROV_D = 0, PROV_H, PROV_M, PROV_R };   // deterministic · human-authored · model-authored · model-reduced
+// Who wrote the row. Where a decision exists it is THE DECIDER; elsewhere it is
+// the writer: 0 the human arm's code, 1 the resident, 2 the governor / the world
+// port, 3 the executor. v1 stamped the RUN on every row (F18); a fold could not
+// tell a human decision in the machine world from a machine one.
+enum Arm : uint8_t { ARM_HUMAN = 0, ARM_MACHINE = 1, ARM_GOVERNOR = 2, ARM_EXECUTOR = 3 };
+enum RecFlags : uint8_t { RF_REVERSIBLE = 1, RF_SHADOW = 2, RF_HISTORY = 4, RF_WARRANT = 8, RF_TORN_OR_SURVEY = 16, RF_LOST = 32 };
 
 #pragma pack(push, 1)
-struct Rec {
+struct Rec {                 // v2 · 40 bytes · a tape is a scan, not a parse
   uint16_t type;
   uint16_t cls;        // decision class
-  uint32_t day;        // the world's clock
-  uint32_t oid;        // obligation id
-  int32_t  seat;       // who; -1 = the resident, -2 = nobody
+  uint32_t day;        // the TICK index. Never wall clock.
+  uint32_t oid;        // obligation id; 0 for rows about no obligation
+  int32_t  seat;       // >= 0 a seat · -1 the resident · -2 nobody · -3 the governor / world port · -4 the executor
   int32_t  a;          // type-specific
   int32_t  b;
   float    margin;     // the decision's own confidence, signed. Holds carry it too.
-  float    value;      // money / work units
-  uint8_t  arm;        // 0 = incumbent, 1 = machine. Two arms, one tape.
-  uint8_t  band;       // agreement band id, for the licence
-  uint8_t  flags;
-  uint8_t  pad;
+  float    value;      // money / minutes / a type-specific scalar
+  uint8_t  arm;        // Arm: the decider where one exists, else the writer
+  uint8_t  band;       // margin band, for the licence
+  uint8_t  flags;      // RecFlags
+  uint8_t  via;        // 0 person · 1 unattended act · 2 draft a person keyed · 3 rented mind acted · 4 signer executed
+  uint16_t firm;       // tenant id; 0 in single-tenant (carried; tenancy deferred)
+  uint8_t  prov;       // Prov
+  uint8_t  ver;        // record version = 2
 };
 #pragma pack(pop)
-static_assert(sizeof(Rec) == 36, "Rec must stay 36 bytes; a tape is a scan, not a parse");
+static_assert(sizeof(Rec) == 40, "Rec v2 is 40 bytes; a tape is a scan, not a parse");
+enum { REC_VER = 2 };
 
 struct Tape {
   std::vector<Rec> rec;
@@ -211,7 +233,7 @@ struct Tape {
   uint8_t head[32] = {0};
   bool chaining = true;                // off for the multiverse's throwaway forks
 
-  void reset() { rec.clear(); chain.clear(); memset(head, 0, 32); }
+  void reset() { rec.clear(); chain.clear(); memset(head, 0, 32); last_tick_at = 0; }
   size_t size() const { return rec.size(); }
 
   void append(const Rec& r) {
@@ -221,11 +243,25 @@ struct Tape {
     const size_t off = chain.size(); chain.resize(off + 32); memcpy(chain.data() + off, head, 32);
   }
   void put(RecType t, uint32_t day, uint32_t oid, int cls, int seat, int arm,
-           int a = 0, int b = 0, float margin = 0.f, float value = 0.f, int band = 0, int flags = 0) {
+           int a = 0, int b = 0, float margin = 0.f, float value = 0.f, int band = 0, int flags = 0,
+           int via = 0, int prov = PROV_D) {
     Rec r{}; r.type = (uint16_t)t; r.cls = (uint16_t)cls; r.day = day; r.oid = oid; r.seat = seat;
     r.a = a; r.b = b; r.margin = margin; r.value = value; r.arm = (uint8_t)arm; r.band = (uint8_t)band; r.flags = (uint8_t)flags;
+    r.via = (uint8_t)via; r.firm = 0; r.prov = (uint8_t)prov; r.ver = REC_VER;
     append(r);
   }
+  // The first row of every tape: the mode, the switch and the schema pin. A fold
+  // that must refuse a mismatched tape can do so before it opens a sidecar.
+  void header(int mode, int sw, uint32_t schema_hash) {
+    put(R_HEADER, 0, 0, 0, -3, ARM_GOVERNOR, mode * 10 + sw, (int)schema_hash, 0.f, (float)REC_VER);
+  }
+  // The clock is a row. b counts the rows of the period that just closed.
+  void tick(uint32_t day) {
+    const size_t since = rec.size() - last_tick_at;
+    put(R_TICK, day, 0, 0, -3, ARM_GOVERNOR, (int)day, (int)since);
+    last_tick_at = rec.size();
+  }
+  size_t last_tick_at = 0;
   // Walk the chain from zero. Returns the index of the first bad record, or -1.
   long verify() const {
     if (!chaining) return -1;
@@ -312,6 +348,21 @@ inline const ClassSpec* schema(int& n) {
   return S;
 }
 inline int n_classes() { int n; schema(n); return n; }
+// The schema pin: BLAKE2b over the authored class table, low 32 bits. Train ==
+// serve at the alphabet: the synthetic world and a real lane emit rows under the
+// same pin, the HEADER row carries it, and a fold refuses a tape that differs.
+inline uint32_t schema_hash() {
+  int n; const ClassSpec* S = schema(n);
+  Blake2b b;
+  for (int c = 0; c < n; ++c) {
+    b.update(S[c].name, strlen(S[c].name));
+    b.update(&S[c].wire, 1); b.update(&S[c].n_systems, 1); b.update(&S[c].verdict_latency, 1);
+    b.update(&S[c].base_rate, 4); b.update(&S[c].arrival_per_day, 4); b.update(&S[c].value, 4);
+    b.update(&S[c].reversible, 1); b.update(&S[c].warrant, 1);
+  }
+  uint8_t h[32]; b.final(h);
+  return (uint32_t)h[0] | ((uint32_t)h[1] << 8) | ((uint32_t)h[2] << 16) | ((uint32_t)h[3] << 24);
+}
 inline const ClassSpec& cls_spec(int c) { int n; const ClassSpec* s = schema(n); return s[c < 0 ? 0 : (c < n ? c : n - 1)]; }
 
 // The identifiability floor, per class. n0 is NOT a constant: it is a function

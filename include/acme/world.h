@@ -190,7 +190,10 @@ inline void world_arrive(World& w, Tape& tape, uint32_t day) {
       }
       w.open_idx.push_back((uint32_t)w.ob.size());
       w.ob.push_back(o);
-      tape.put(R_ARRIVE, day, o.id, c, -2, 0, 0, 0, 0.f, s.value);
+      // v2: the due day and the dependency are ON THE ROW (F19). A cold fold of
+      // the tape can now rebuild the cell; v1 wrote a = b = 0 here.
+      tape.put(R_ARRIVE, day, o.id, c, -2, ARM_GOVERNOR, (int)o.day_due,
+               o.dep >= 0 ? (int)w.ob[(size_t)o.dep].id : -1, 0.f, s.value);
     }
   }
 }
@@ -278,7 +281,7 @@ inline float decay(uint32_t now, uint32_t last_touch, float half_life_days = 4.0
 // The world settles what has been decided, after each class's verdict latency.
 // This is the ONLY function that writes an outcome, and it never sees who
 // decided — the grader is exogenous by construction.
-inline void world_settle(World& w, const Firm& f, Tape& tape, uint32_t day, int arm) {
+inline void world_settle(World& w, const Firm& f, Tape& tape, uint32_t day) {
   for (uint32_t idx : w.open_idx) {
     Obligation& o = w.ob[idx];
     if (o.state != OB_DECIDED) continue;
@@ -293,8 +296,10 @@ inline void world_settle(World& w, const Firm& f, Tape& tape, uint32_t day, int 
     o.outcome = (uint8_t)(right ? (on_time ? OK_GOOD : OK_LATE) : OK_BAD);
     o.state = OB_SETTLED;
     o.day_settled = day;
-    tape.put(R_OUTCOME, day, o.id, o.cls, o.seat, arm, o.outcome, (int)o.by_machine,
-             o.margin, (float)outcome_cost(f.writ, s, o.outcome), o.band);
+    // v2: the row names THE DECIDER (seat, arm) and carries the via, so the
+    // ladder is a fold of OUTCOME rows joined to nothing else (F18, F19).
+    tape.put(R_OUTCOME, day, o.id, o.cls, o.by_machine ? -1 : o.seat, o.by_machine ? ARM_MACHINE : ARM_HUMAN,
+             o.outcome, (int)o.via, o.margin, (float)outcome_cost(f.writ, s, o.outcome), o.band, 0, o.via, PROV_D);
   }
   // compact
   std::vector<uint32_t> keep; keep.reserve(w.open_idx.size());

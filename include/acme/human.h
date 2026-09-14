@@ -121,13 +121,18 @@ inline void build_meetings(const Firm& f, const std::vector<std::vector<int>>& r
 struct WorkResult { float minutes = 0; bool progressed = false; bool terminal = false; };
 
 inline WorkResult human_work(World& w, Firm& f, Tape& tape, HumanStats& st,
-                             uint32_t idx, int seat_id, uint32_t day, int arm) {
+                             uint32_t idx, int seat_id, uint32_t day) {
   Obligation& o = w.ob[idx];
   Seat& s = f.seat[seat_id];
   const ClassSpec& sp = cls_spec(o.cls);
   const uint64_t seed = w.seed;
   WorkResult res;
   TimeLedger& TL = st.time; TimeLedger& CL = st.by_class[o.cls];
+  // v2: every priced act is a row (R_ACT), so the minute meter is a fold of the
+  // tape and the decide fraction is measured from rows a real firm could carry.
+  auto act = [&](int kind, float m, float completeness = 0.f) {
+    tape.put(R_ACT, day, o.id, o.cls, seat_id, ARM_HUMAN, kind, 0, completeness, m);
+  };
 
   // --- REWORK. Coming back to a case you have not touched costs re-acquisition,
   // and this is the tax a resident does not pay because it never puts the case down.
@@ -135,10 +140,14 @@ inline WorkResult human_work(World& w, Firm& f, Tape& tape, HumanStats& st,
     const float d = decay(day, o.last_touch);
     const float lost = (1.f - d);
     const float m = 8.0f * lost * (float)sp.n_systems * 0.35f;
-    TL.rework.add(m); CL.rework.add(m); res.minutes += m;
-    // some of what was fetched has to be fetched again
+    TL.rework.add(m); CL.rework.add(m); res.minutes += m; act(ACT_REWORK, m);
+    // some of what was fetched has to be fetched again; the loss is a row too,
+    // so a fold knows which systems are no longer in hand
     for (int k = 0; k < sp.n_systems; ++k)
-      if (ucoin(seed, 3300 + k, o.id * 31 + day, lost * 0.6f)) o.systems_opened &= ~(1u << k);
+      if (ucoin(seed, 3300 + k, o.id * 31 + day, lost * 0.6f) && (o.systems_opened & (1u << k))) {
+        o.systems_opened &= ~(1u << k);
+        tape.put(R_CONTEXT, day, o.id, o.cls, seat_id, ARM_HUMAN, k, 0, 0.f, 0.f, 0, RF_LOST);
+      }
   }
   o.last_touch = day;
 
@@ -155,7 +164,7 @@ inline WorkResult human_work(World& w, Firm& f, Tape& tape, HumanStats& st,
     if (s.attn_left - res.minutes < m) break;
     o.systems_opened |= (1u << k);
     TL.fetch.add(m); CL.fetch.add(m); res.minutes += m;
-    tape.put(R_CONTEXT, day, o.id, o.cls, seat_id, arm, k, 0, 0.f, m);
+    tape.put(R_CONTEXT, day, o.id, o.cls, seat_id, ARM_HUMAN, k, 0, 0.f, m);   // fetch minutes ride on the CONTEXT row
   }
 
   // --- what is actually in hand, and therefore what this person will decide.
@@ -173,16 +182,20 @@ inline WorkResult human_work(World& w, Firm& f, Tape& tape, HumanStats& st,
 
   // --- FRAME. Everything a person renders for another person's eyes. The
   // fraction of work that exists purely because the next reader is human.
+  // A day that ends mid-case is a row (HOLD, reason 3: in progress), so the fold
+  // can carry the case's state and its last touch without a struct.
+  auto in_progress = [&]() { o.state = OB_INPROG; res.progressed = true;
+    tape.put(R_HOLD, day, o.id, o.cls, seat_id, ARM_HUMAN, 3, 0, o.margin, 0.f, 0, 0, 0, PROV_H); return res; };
   const float frame_m = 6.0f + 26.0f * sp.decide_frac + 3.0f * (float)o.hops;
-  if (s.attn_left - res.minutes < frame_m) { o.state = OB_INPROG; res.progressed = true; return res; }
-  TL.frame.add(frame_m); CL.frame.add(frame_m); res.minutes += frame_m;
+  if (s.attn_left - res.minutes < frame_m) return in_progress();
+  TL.frame.add(frame_m); CL.frame.add(frame_m); res.minutes += frame_m; act(ACT_FRAME, frame_m);
 
   // --- DECIDE. The job. A contested claim is not a fifteen-minute affair, and
   // the fact that it spans days is exactly why context decays and why the
   // person re-reads their own notes tomorrow.
   const float dec_m = 12.0f + 105.0f * sp.decide_frac;
-  if (s.attn_left - res.minutes < dec_m) { o.state = OB_INPROG; res.progressed = true; return res; }
-  TL.decide.add(dec_m); CL.decide.add(dec_m); res.minutes += dec_m;
+  if (s.attn_left - res.minutes < dec_m) return in_progress();
+  TL.decide.add(dec_m); CL.decide.add(dec_m); res.minutes += dec_m; act(ACT_DECIDE, dec_m, o.completeness);
   s.fatigue = std::min(1.f, s.fatigue + 0.035f);
 
   // the decider's own confidence: high when the context is complete and the
@@ -205,11 +218,11 @@ inline WorkResult human_work(World& w, Firm& f, Tape& tape, HumanStats& st,
   const bool unsure = std::fabs(o.margin) < 0.30f;   // UNSURE is small |margin|, not a negative one
   if ((over_authority || unsure) && s.boss >= 0 && o.escalations < 3) {
     const float tm = 6.0f + 4.0f * (float)sp.n_systems;    // writing it up for someone else
-    TL.transport.add(tm); CL.transport.add(tm); res.minutes += tm;
+    TL.transport.add(tm); CL.transport.add(tm); res.minutes += tm; act(ACT_TRANSPORT, tm);
     o.state = OB_ESCALATED; o.seat = s.boss; ++o.escalations; ++o.hops;
     o.systems_opened = 0;                                   // THE ROUND TRIP: the boss starts cold
     ++st.n_escalated;
-    tape.put(R_ESCALATE, day, o.id, o.cls, seat_id, arm, s.boss, o.escalations, o.margin, sp.value);
+    tape.put(R_ESCALATE, day, o.id, o.cls, seat_id, ARM_HUMAN, s.boss, o.escalations, o.margin, sp.value, o.band, 0, 0, PROV_H);
     res.progressed = true;
     return res;
   }
@@ -217,18 +230,18 @@ inline WorkResult human_work(World& w, Firm& f, Tape& tape, HumanStats& st,
   // --- warrant classes need a signature no matter how sure anyone is
   if (sp.warrant && s.kind < SK_VP && s.boss >= 0) {
     const float tm = 8.0f;
-    TL.transport.add(tm); CL.transport.add(tm); res.minutes += tm;
+    TL.transport.add(tm); CL.transport.add(tm); res.minutes += tm; act(ACT_TRANSPORT, tm);
     o.state = OB_ESCALATED; o.seat = s.boss; ++o.escalations; ++o.hops; o.systems_opened = 0;
     ++st.n_escalated;
-    tape.put(R_ESCALATE, day, o.id, o.cls, seat_id, arm, s.boss, o.escalations, o.margin, sp.value, 0, 1);
+    tape.put(R_ESCALATE, day, o.id, o.cls, seat_id, ARM_HUMAN, s.boss, o.escalations, o.margin, sp.value, o.band, RF_WARRANT, 0, PROV_H);
     res.progressed = true;
     return res;
   }
 
   // --- COMMIT. Write the answer back. Into another application, of course.
   const float com_m = 6.0f + 4.0f * (float)sp.n_systems;
-  if (s.attn_left - res.minutes < com_m) { o.state = OB_INPROG; res.progressed = true; return res; }
-  TL.commit.add(com_m); CL.commit.add(com_m); res.minutes += com_m;
+  if (s.attn_left - res.minutes < com_m) return in_progress();
+  TL.commit.add(com_m); CL.commit.add(com_m); res.minutes += com_m; act(ACT_COMMIT, com_m);
 
   o.decision = rd.choice;
   o.state = OB_DECIDED;
@@ -240,7 +253,7 @@ inline WorkResult human_work(World& w, Firm& f, Tape& tape, HumanStats& st,
   st.completeness.add(o.completeness);
   st.hops.add(o.hops);
   st.cycle_days.add((double)(day - o.day_open));
-  tape.put(R_DECIDE, day, o.id, o.cls, seat_id, arm, o.decision, o.hops, o.margin, sp.value);
+  tape.put(R_DECIDE, day, o.id, o.cls, seat_id, ARM_HUMAN, o.decision, o.hops, o.margin, sp.value, o.band, 0, 0, PROV_H);
   res.terminal = true; res.progressed = true;
   return res;
 }
@@ -249,7 +262,7 @@ inline WorkResult human_work(World& w, Firm& f, Tape& tape, HumanStats& st,
 // ONE DAY AT ACME
 // ----------------------------------------------------------------------------
 inline void human_day(World& w, Firm& f, Tape& tape, HumanStats& st,
-                      const std::vector<std::vector<int>>& rep, uint32_t day, int arm) {
+                      const std::vector<std::vector<int>>& rep, uint32_t day) {
   // reset the day's attention
   for (Seat& s : f.seat) { s.attn_left = s.attention; s.meetings_today = 0; s.fatigue *= 0.55f; }
 
@@ -266,6 +279,7 @@ inline void human_day(World& w, Firm& f, Tape& tape, HumanStats& st,
       const float m = s.attention * base * (0.80f + 0.40f * u01(w.seed, 3900, s.id * 977 + day));
       const float take = std::min(s.attn_left, m);
       s.attn_left -= take; charged += take;
+      tape.put(R_ACT, day, 0, 0, s.id, ARM_HUMAN, ACT_GLUE, 0, 0.f, take);   // glue is per seat, no class
     }
     st.time.glue.add(charged);
   }
@@ -281,7 +295,7 @@ inline void human_day(World& w, Firm& f, Tape& tape, HumanStats& st,
     }
     st.time.meeting.add(charged);
     ++st.n_meetings;
-    tape.put(R_MEETING, day, 0, 0, m.owner, arm, (int)m.attend.size(), m.kind, 0.f, charged);
+    tape.put(R_MEETING, day, 0, 0, m.owner, ARM_HUMAN, (int)m.attend.size(), m.kind, 0.f, charged);
   }
 
   // --- cross-wire coordination: one touch per live dependency, because two
@@ -298,7 +312,7 @@ inline void human_day(World& w, Firm& f, Tape& tape, HumanStats& st,
       s.attn_left -= take; charged += take; ++touched;
     }
     st.time.meeting.add(charged);
-    tape.put(R_MEETING, day, 0, 0, -2, arm, touched, MG_CROSSWIRE, 0.f, charged);
+    tape.put(R_MEETING, day, 0, 0, -2, ARM_HUMAN, touched, MG_CROSSWIRE, 0.f, charged);
   }
 
   // --- assignment. A lead pushes open work to whoever has room. Note what the
@@ -334,7 +348,7 @@ inline void human_day(World& w, Firm& f, Tape& tape, HumanStats& st,
     if (best < 0 || best_room < 5.f) continue;             // nobody has room; it stays OPEN and ages
     proj[best] += 20.f + 9.0f * (float)sp.n_systems;
     o.seat = best; o.state = OB_QUEUED; ++o.hops;
-    tape.put(R_ASSIGN, day, o.id, o.cls, best, arm, 0, o.hops);
+    tape.put(R_ASSIGN, day, o.id, o.cls, best, ARM_HUMAN, 0, o.hops);
   }
 
   // --- the work. Each seat drains its queue in deadline order until attention
@@ -356,14 +370,14 @@ inline void human_day(World& w, Firm& f, Tape& tape, HumanStats& st,
     for (uint32_t i : q) {
       Obligation& o = w.ob[i];
       if (o.dep >= 0 && w.ob[o.dep].state != OB_SETTLED && w.ob[o.dep].state != OB_DECIDED) {
-        tape.put(R_HOLD, day, o.id, o.cls, sid, arm, 1 /*blocked*/, 0, o.margin);
+        tape.put(R_HOLD, day, o.id, o.cls, sid, ARM_HUMAN, 1 /*blocked*/, 0, o.margin, 0.f, 0, 0, 0, PROV_H);
         ++st.n_held; continue;
       }
       if (s.attn_left < 12.f) {                              // out of day
-        tape.put(R_HOLD, day, o.id, o.cls, sid, arm, 2 /*no attention*/, 0, o.margin);
+        tape.put(R_HOLD, day, o.id, o.cls, sid, ARM_HUMAN, 2 /*no attention*/, 0, o.margin, 0.f, 0, 0, 0, PROV_H);
         ++st.n_held; continue;
       }
-      const WorkResult r = human_work(w, f, tape, st, i, sid, day, arm);
+      const WorkResult r = human_work(w, f, tape, st, i, sid, day);
       s.attn_left -= r.minutes;
       st.attention_spent += r.minutes;
       if (s.attn_left < 0) s.attn_left = 0;
