@@ -61,6 +61,11 @@ struct Args {
   const char* switch_file = nullptr;   // --switch-file PATH: read each period by the port; a change is a NOTE row   [D2]
   const char* pill = nullptr;    // --pill PATH: the heartbeat, by rename, every period (default <tape>/intellect.heartbeat.json)   [D2]
   bool wall_jitter = false;      // the battery's: TICK rows carry a wall value (the dynamic O25)   [D3]
+  bool  shared = false;          // --shared: the plant carries a shared fact per class that moves at --flip-rate   [E0]
+  float flip_rate = 0.025f;      // --flip-rate R: per class per day
+  float unresolved = 0.f;        // --unresolved R: the share of decided cells the world never answers   [E0]
+  float exposure_cap = 0.f;      // --exposure-cap V: the writ's cap on outstanding exposure, in dollars; 0 = none   [E0]
+  bool  check_shared = false;    // --check-shared: re-read every certificate carry against the judge and count disagreements   [E0]
 };
 static Args parse(int argc, char** argv) {
   Args a;
@@ -87,11 +92,19 @@ static Args parse(int argc, char** argv) {
     else if (!strcmp(s, "--switch")) { a.sw = (i + 1 < argc) ? argv[++i] : "live"; if (switch_parse(a.sw) < 0) { std::fprintf(stderr, "--switch off|shadow|live|stop\n"); exit(2); } }
     else if (!strcmp(s, "--switch-file")) a.switch_file = (i + 1 < argc) ? argv[++i] : nullptr;
     else if (!strcmp(s, "--pill")) a.pill = (i + 1 < argc) ? argv[++i] : nullptr;
+    else if (!strcmp(s, "--shared")) a.shared = true;
+    else if (!strcmp(s, "--flip-rate")) a.flip_rate = next_f(0.025f);
+    else if (!strcmp(s, "--unresolved")) a.unresolved = next_f(0.f);
+    else if (!strcmp(s, "--exposure-cap")) a.exposure_cap = next_f(0.f);
+    else if (!strcmp(s, "--check-shared")) a.check_shared = true;
     else if (!strcmp(s, "--quiet")) a.quiet = true;
     else { std::fprintf(stderr, "unknown flag %s\n", s); exit(2); }
   }
   return a;
 }
+// E0: the world the args describe: the shared fact and the unanswering rate are
+// the plant's; the exposure cap is the writ's
+static World world_of(const Args& a, uint64_t seed) { return make_world(seed, a.shared, a.flip_rate, a.unresolved); }
 static double now_s() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
 static void rule(const char* t) { std::printf("\n=== %s ", t); for (int i = (int)strlen(t); i < 66; ++i) std::putchar('='); std::putchar('\n'); }
 
@@ -139,7 +152,7 @@ static void run_human(Run& R, int days, bool chain = true, int from_day = 0, int
 }
 
 static int cmd_sim(const Args& a) {
-  Run R; R.f = build_acme(a.n, a.span, a.seed); R.w = make_world(a.seed); R.w.demand_scale = a.demand;
+  Run R; R.f = build_acme(a.n, a.span, a.seed); R.w = world_of(a, a.seed); R.w.demand_scale = a.demand; R.f.writ.exposure_cap = a.exposure_cap;
   g_dump_dir = a.dump;
   std::unique_ptr<TapeFile> file;
   if (a.tape) { file.reset(new TapeFile()); uint8_t genesis[32] = {0};
@@ -303,6 +316,9 @@ static AutoOut run_machine(const Args& a, Run& R, int warm_days, int total_days,
   M.res.lie_reads_clock = (a.lie == 23);                     // O25's lie
   M.res.lie_effect_under_off = (a.lie == 22);                // O19's lie
   M.res.lie_silent_proposal = (a.lie == 21);                 // O30's lie
+  M.res.check_shared = a.check_shared;                       // E0's measurement mode
+  M.res.lie_stale_certificate = (a.lie == 24);               // O37's lie
+  M.res.lie_ignore_cap = (a.lie == 25);                      // O38's lie
 
   // ---- PHASE 3: REPLAY. The fast grader, on its own support.
   double t0 = now_s();
@@ -365,7 +381,7 @@ static bool run_machine_resume(const Args& a, Run& R, int warm_days, int total_d
 }
 
 static int cmd_automate(const Args& a) {
-  Run R; R.f = build_acme(a.n, a.span, a.seed); R.w = make_world(a.seed); R.w.demand_scale = a.demand;
+  Run R; R.f = build_acme(a.n, a.span, a.seed); R.w = world_of(a, a.seed); R.w.demand_scale = a.demand; R.f.writ.exposure_cap = a.exposure_cap;
   g_dump_dir = a.dump;
   if (a.resume) {                                            // D1: continue from the durable tape's newest checkpoint
     if (!a.tape) { std::fprintf(stderr, "--resume needs --tape DIR\n"); return 2; }
@@ -483,6 +499,7 @@ static int cmd_automate(const Args& a) {
   print_path_length(path_length(R.tape, R.L), "the resident arm");
   print_frontier_bill(R.tape, R.w.NC);
   print_shadow_agreement(R.tape, R.w.NC);
+  if (a.shared || a.unresolved > 0.f || a.exposure_cap > 0.f) print_shared_fact(A.ms, R.L, A.arm, a.exposure_cap);
 
   rule("PHASE 6 · THE CASCADE — THE MIDDLE LEAVES BY ARITHMETIC");
   // the panel is the plant's to build (the firm at the sizes it has been) and
@@ -546,8 +563,8 @@ static int cmd_twin(const Args& a) {
               "  best-respond to it. A twin can, and the most useful thing it prints is not\n"
               "  which arm won. It is HOW WRONG THE CANARY ESTIMATE WOULD HAVE BEEN.\n");
 
-  Run A; A.f = build_acme(a.n, a.span, a.seed); A.w = make_world(a.seed); A.w.demand_scale = a.demand;
-  Run B; B.f = build_acme(a.n, a.span, a.seed); B.w = make_world(a.seed); B.w.demand_scale = a.demand;
+  Run A; A.f = build_acme(a.n, a.span, a.seed); A.w = world_of(a, a.seed); A.w.demand_scale = a.demand; A.f.writ.exposure_cap = a.exposure_cap;
+  Run B; B.f = build_acme(a.n, a.span, a.seed); B.w = world_of(a, a.seed); B.w.demand_scale = a.demand; B.f.writ.exposure_cap = a.exposure_cap;
 
   const double t0 = now_s();
   run_human(A, a.days, false);
@@ -579,6 +596,7 @@ static int cmd_twin(const Args& a) {
   print_minutes_by_via(minutes_by_via(B.tape, B.L), "the resident arm");
   print_path_length(path_length(A.tape, A.L), "the incumbent arm");
   print_path_length(path_length(B.tape, B.L), "the resident arm");
+  if (a.shared || a.unresolved > 0.f || a.exposure_cap > 0.f) print_shared_fact(mb.ms, B.L, rb, a.exposure_cap);
 
   // THE BIAS OF THE CANARY ESTIMATOR
   CanaryBias cb;
@@ -617,7 +635,7 @@ static int cmd_twin(const Args& a) {
 struct Patch { const char* name; int span; float thin; float eps; float kappa_max; int instrument_cls; };
 
 static double eval_patch(const Args& a, const Patch& p, uint64_t seed, int days) {
-  Run R; R.f = build_acme(a.n, p.span, seed); R.w = make_world(seed); R.w.demand_scale = a.demand;
+  Run R; R.f = build_acme(a.n, p.span, seed); R.w = world_of(a, seed); R.w.demand_scale = a.demand; R.f.writ.exposure_cap = a.exposure_cap;
   // v2: every patch lands as a PATCH row carrying its inverse (margin = old, value = new)
   // before the run, so a fold of the fork's tape knows which universe it is.
   R.tape.header(MODE_SYNTHETIC, SW_LIVE, alphabet_hash());
@@ -809,7 +827,8 @@ static int cmd_selftest(const Args& a) {
           case R_HOLD:     if ((r.seat >= 0 && r.prov != PROV_H) || (r.seat == -1 && r.prov != PROV_M)) shape_fail(r, "prov"); break;
           case R_ESCALATE: if ((r.seat >= 0 && r.prov != PROV_H) || (r.seat == -1 && r.prov != PROV_M)) shape_fail(r, "prov"); break;
           case R_EFFECT:   if (r.seat != -1 || r.arm != ARM_MACHINE || r.prov != PROV_M || r.via < 1 || r.via > 4) shape_fail(r, "via"); break;
-          case R_OUTCOME:  if (r.seat == -2 || r.a < OK_GOOD || r.a > OK_BAD || r.b != r.via || (r.arm == ARM_MACHINE) != (r.seat == -1)) shape_fail(r, "decider/kind/via"); break;
+          case R_OUTCOME:  if (r.seat == -2 || r.a < OK_GOOD || r.a > OK_UNRESOLVED || r.b != r.via || (r.arm == ARM_MACHINE) != (r.seat == -1)) shape_fail(r, "decider/kind/via"); break;
+          case R_SENSE:    if (r.seat != -1 || r.arm != ARM_MACHINE || r.prov != PROV_M) shape_fail(r, "writer"); break;
           case R_LICENSE: case R_KAPPA: if (r.seat != -3 || r.arm != ARM_GOVERNOR) shape_fail(r, "governor"); break;
           case R_STRATUM:  if (r.seat != -3 || r.arm != ARM_GOVERNOR || r.a < 0 || r.a > 3 || r.oid == 0) shape_fail(r, "stratum"); break;
           default: break;
@@ -993,6 +1012,7 @@ static int cmd_selftest(const Args& a) {
           const int stratum = F.stratum_of(r.oid);
           g.in_canary = (stratum == 1); g.in_audit = (stratum == 2);
           g.budget_left = 1e9f;                                // an effect exists, so the budget was there
+          g.sw = F.sw; g.value = cls_spec(r.cls).value; g.exposure_left = 1e30f;   // and the exposure
           g.sw = F.sw;
           const GateOut v = gate(g, A.f.writ);
           const int want = (r.via == 1) ? V_ACT : (r.via == 2) ? V_DRAFT : (r.via == 3) ? V_FRONTIER : V_WARRANT;
@@ -1054,6 +1074,79 @@ static int cmd_selftest(const Args& a) {
                same ? "identical" : "DIFFERS", same ? "" : (first >= 0 ? (std::string(", first at row ") + std::to_string(first)).c_str() : ", the row counts differ"));
       ck(LIE == 23 ? !ok : ok, "O25  the same rows at different wall spacing give identical verdicts: the machine reads the day, never the clock", buf);
     }
+    // --- O37: THE SHARED FACT. A world with a shared fact per class that moves;
+    //          the machine carries a proposal across a change on the judge's own
+    //          certificate when the sign and the band survive, and reads again
+    //          otherwise. Required: every carry re-derives from its rows
+    //          (direction_new = direction_old + 4 sens (0.35 + 0.65 c) dx, off
+    //          the PROPOSAL and SENSE rows), the judge's own read agrees with
+    //          every carry on sign and band, and no cell was read again whose
+    //          certificate said it need not be. The lie: the old proposal carried
+    //          as if the fact had not moved.
+    {
+      Args as = aa; as.shared = true; as.flip_rate = 0.05f; as.check_shared = true; as.lie = (LIE == 24) ? 24 : -1;
+      Run S; S.f = build_acme(200, 7, 7); S.w = world_of(as, 7); S.w.demand_scale = 1.5f;
+      // a judge whose competence does not learn: the certificate is exact for it,
+      // so 0 disagreements is the requirement. The learning judge's drift (its
+      // noise shrinks as it learns, which moves a fresh read for a reason that
+      // is not the fact) is a reading of the automate, not a defect of the carry.
+      PlantJudge fixed(&S.w, 0x4A55444745ULL, JUDGE_RESIDENT_HASH, 0.55f, false);
+      const AutoOut os = run_machine(as, S, as.warm, as.days, false, &fixed);
+      // re-derive every carry from rows: the previous PROPOSAL+SENSE and the carry's SENSE
+      struct Last { float dir = 0.f, c = 0.f, sens = 0.f, x = 0.f; bool has = false; };
+      std::vector<Last> last; long carries = 0, rederived = 0;
+      for (size_t i = 0; i < S.tape.size(); ++i) {
+        const Rec& r = S.tape.rec[i];
+        if (r.oid >= last.size()) last.resize((size_t)r.oid + 1024);
+        Last& l = last[r.oid];
+        if (r.type == R_PROPOSAL && r.via == 1) {
+          ++carries;
+          // the carry's SENSE row follows it: find the new x
+          float xnew = 0.f; bool found = false;
+          for (size_t j = i + 1; j < S.tape.size() && j < i + 4; ++j) if (S.tape.rec[j].type == R_SENSE && S.tape.rec[j].oid == r.oid) { xnew = S.tape.rec[j].value; found = true; break; }
+          const float expect = l.dir + 4.0f * l.sens * (0.35f + 0.65f * l.c) * (xnew - l.x);
+          if (found && l.has && std::fabs(expect - r.margin) <= 1e-3f * std::max(1.f, std::fabs(expect))) ++rederived;
+          l.dir = r.margin; l.c = r.value;
+        } else if (r.type == R_PROPOSAL) { l.dir = r.margin; l.c = r.value; }
+        else if (r.type == R_SENSE) { l.has = (r.b != 0); l.sens = r.margin; l.x = r.value; }
+      }
+      const MachineStats& m = os.ms;
+      const bool ok = m.shared_events > 0 && m.incr_updates > 0 && carries == (long)m.incr_updates && rederived == carries
+                   && m.incr_checked == m.incr_updates && m.incr_discrepancies == 0 && m.shared_full_reads > 0;
+      snprintf(buf, sizeof buf, "(%llu changes of a shared fact; %llu frames moved by it: %llu carried by the certificate, all %ld re-derived from rows, %llu checked against the judge with %llu disagreements; %llu read again, of which %llu changed choice and %llu changed band)",
+               (unsigned long long)m.shared_events, (unsigned long long)m.shared_affected, (unsigned long long)m.incr_updates, rederived,
+               (unsigned long long)m.incr_checked, (unsigned long long)m.incr_discrepancies, (unsigned long long)m.shared_full_reads,
+               (unsigned long long)m.shared_flip_choice, (unsigned long long)m.shared_flip_band);
+      ck(LIE == 24 ? !ok : ok, "O37  the shared fact: a proposal is carried across a change only on the judge's certificate, re-derivable from rows, and read again where a margin crosses", buf);
+    }
+    // --- O38: OUTSTANDING EXPOSURE. Under a cap and a world that sometimes never
+    //          answers: the fold's outstanding never exceeds the cap at any row,
+    //          acts were held for exposure, every unresolved cell was closed by an
+    //          explicit write-off row that released its exposure, and the ladder
+    //          took no write-off as evidence. The lie: one act in a hundred past the cap.
+    {
+      Args ae = aa; ae.unresolved = 0.05f; ae.exposure_cap = 3.0e5f; ae.lie = (LIE == 25) ? 25 : -1;
+      Run E; E.f = build_acme(200, 7, 7); E.w = world_of(ae, 7); E.w.demand_scale = 1.5f; E.f.writ.exposure_cap = ae.exposure_cap;
+      const AutoOut oe = run_machine(ae, E, ae.warm, ae.days, false);
+      Ledger F; F.init(E.w.NC);
+      double worst = 0.0; long over = 0, writeoffs = 0, effects_wager = 0;
+      std::vector<uint8_t> decided_by_wager;
+      for (const Rec& r : E.tape.rec) {
+        F.apply(r);
+        if (F.outstanding_total > worst) worst = F.outstanding_total;
+        if (F.outstanding_total > (double)ae.exposure_cap + 1e-6) ++over;
+        if (r.type == R_EFFECT && !(r.flags & RF_SHADOW) && (r.via == 1 || r.via == 3)) ++effects_wager;
+        if (r.type == R_OUTCOME && r.a == OK_UNRESOLVED) ++writeoffs;
+      }
+      // the ladder saw no write-off: count n_machine + n_assisted against answered outcomes on the wager
+      long answered_wager = 0; for (const Rec& r : E.tape.rec) if (r.type == R_OUTCOME && r.a != OK_UNRESOLVED && (r.via == 1 || r.via == 3)) ++answered_wager;
+      long ladder_n = 0; for (int c = 0; c < E.w.NC; ++c) for (int b = 0; b < NBAND; ++b) ladder_n += oe.lad.at(c, b).n_machine;
+      const bool ok = over == 0 && oe.ms.exposure_holds > 0 && writeoffs > 0 && ladder_n == answered_wager && std::fabs(F.outstanding_total - E.L.outstanding_total) < 1e-3;
+      snprintf(buf, sizeof buf, "(cap $%.0fk; the fold's outstanding peaked at $%.0fk, %ld rows over the cap; %llu acts held for exposure; %ld write-offs, each a row; the ladder counted %ld wager outcomes against %ld answered; the live ledger's outstanding equals the fold's)",
+               ae.exposure_cap / 1e3, worst / 1e3, over, (unsigned long long)oe.ms.exposure_holds, writeoffs, ladder_n, answered_wager);
+      (void)effects_wager;
+      ck(LIE == 25 ? !ok : ok, "O38  outstanding exposure never exceeds the writ's cap, an unanswered cell is closed only by a write-off row, and a write-off is evidence for nothing", buf);
+    }
   }
 
   // --- O2: the gate can never widen. Exhaustive over the input lattice.
@@ -1069,7 +1162,7 @@ static int cmd_selftest(const Args& a) {
            for (int nv = 0; nv < 5; ++nv) {
              GateIn g{}; g.rung = rung; g.reversible = rev; g.warrant_reserved = war; g.blocked = blk;
              g.in_canary = can; g.in_audit = aud; g.direction = -2.f + 0.5f * di; g.novelty = 0.2f * nv;
-             g.sharpness = 0.f; g.budget_left = 1000.f; g.sw = SW_LIVE;
+             g.sharpness = 0.f; g.budget_left = 1000.f; g.sw = SW_LIVE; g.value = 1.f; g.exposure_left = 1e30f;
              const GateOut v = gate(g, wr); ++cases;
              if (v.verdict == V_ACT) { ++acts;
                if (rung <= 0 || war || blk) ok = false;           // an unlicensed act is a widening
@@ -1081,9 +1174,13 @@ static int cmd_selftest(const Args& a) {
              if (vs.verdict == V_ACT && v.verdict != V_ACT) ok = false;
              GateIn go = g; go.sw = SW_OFF; const GateOut vo = gate(go, wr);
              if (vo.verdict != V_HOLD || vo.reason != RS_SWITCH_OFF) ok = false;
+             // E0: an exhausted exposure allowance holds an act and moves nothing else
+             GateIn ge = g; ge.exposure_left = 0.f; const GateOut ve = gate(ge, wr);
+             if (ve.verdict == V_ACT) ok = false;
+             if (v.verdict != V_ACT && (ve.verdict != v.verdict || ve.reason != v.reason)) ok = false;
            }
     if (LIE == 2) ok = !ok;                                       // THE LIE
-    snprintf(buf, sizeof buf, "(%ld lattice points, %ld reached ACT; pressure never widened; off held every point)", cases, acts);
+    snprintf(buf, sizeof buf, "(%ld lattice points, %ld reached ACT; pressure never widened; off held every point; an exhausted exposure allowance held every act and moved nothing else)", cases, acts);
     ck(LIE == 2 ? !ok : ok, "O2   the gate never authorises outside its licence", buf);
   }
 
@@ -1091,13 +1188,13 @@ static int cmd_selftest(const Args& a) {
   {
     Writ wr; bool ok = true;
     for (int rung = 1; rung <= 2; ++rung) {
-      GateIn g{}; g.rung = rung; g.reversible = true; g.direction = 3.f; g.novelty = 0.1f; g.sw = SW_LIVE;
+      GateIn g{}; g.rung = rung; g.reversible = true; g.direction = 3.f; g.novelty = 0.1f; g.sw = SW_LIVE; g.value = 1.f; g.exposure_left = 1e30f;
       g.in_canary = true; g.budget_left = 0.f;
       const GateOut v = gate(g, wr);
       if (v.verdict == V_ACT) ok = false;
       if (v.verdict != V_HOLD || v.reason != RS_NO_BUDGET) ok = false;
     }
-    if (LIE == 3) { GateIn g{}; g.rung = 9; g.reversible = true; g.direction = 3.f; g.in_canary = true; g.sw = SW_LIVE;
+    if (LIE == 3) { GateIn g{}; g.rung = 9; g.reversible = true; g.direction = 3.f; g.in_canary = true; g.sw = SW_LIVE; g.value = 1.f; g.exposure_left = 1e30f;
                     g.budget_left = 0.f; ok = (gate(g, wr).verdict == V_HOLD); }
     ck(LIE == 3 ? !ok : ok, "O3   out of supervision degrades to HOLD, never to acting");
   }

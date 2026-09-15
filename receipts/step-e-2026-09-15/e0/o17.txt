@@ -1,0 +1,2 @@
+  [PASS] O17  the machine links without the plant or the governor: ledger.h, port.h, license.h, solver.h, machine.h, report.h compile under -DACME_NO_PLANT -DACME_NO_GOVERNOR
+  [PASS] O17  the machine links without the plant or the governor: the lie TUs (one include of world.h; one of governor.h) were refused by the guards   (with oracle 17 lied to: PASS on its line means the lie was caught)

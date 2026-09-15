@@ -20,7 +20,7 @@ namespace acme {
 // A null judge and a null store, so the kernel's period is instantiated
 // against the port alone.
 struct NullStore : Store {
-  Frame frame(uint32_t oid, int cls, uint32_t mask) const override { Frame f; f.oid = oid; f.cls = cls; f.systems_mask = mask; return f; }
+  Frame frame(uint32_t oid, int cls, uint32_t mask, uint32_t) const override { Frame f; f.oid = oid; f.cls = cls; f.systems_mask = mask; return f; }
 };
 struct NullJudge : Judge {
   Proposal read(const Frame& f) override { Proposal p; p.choice = 0; p.signal = 0.f; p.completeness_hat = f.coverage_hat; p.judge_hash = hash(); return p; }

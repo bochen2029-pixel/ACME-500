@@ -122,11 +122,22 @@ struct Ledger {
   uint32_t day = 0;
   int      mode = -1, sw = -1; uint32_t schema = 0; int ver = 0;
   std::vector<TimeLedger> by_class;           // the minute meter per class (a fold of ACT rows)
+  // E0: OUTSTANDING EXPOSURE. The value of the machine's unattended effects (via
+  // 1 and 3) whose outcome has not landed, per class and in total: a fold of
+  // EFFECT rows (+) and OUTCOME rows (-), a write-off releasing like a verdict.
+  // The gate reads it against the writ's cap; nothing else may release it.
+  std::vector<double>     outstanding;        // [class]
+  double                  outstanding_total = 0.0;
+  void add_exposure(int cls, double v)     { if ((int)outstanding.size() < NC) outstanding.assign(NC, 0.0); if (cls < NC) { outstanding[cls] += v; outstanding_total += v; } }
+  void release_exposure(const Obligation& o) { if (o.by_machine && (o.via == 1 || o.via == 3)) add_exposure(o.cls, -(double)cls_spec(o.cls).value); }
   TimeLedger              total;
   // C1: THE MEMO. The last proposal per oid is a fold of PROPOSAL rows: the
   // kernel carries it forward while the cell's frame hash is unchanged and
   // reads the judge again only when it changed, or the floor sample says so.
-  struct LastProp { int choice = 0; float direction = 0.f, completeness_hat = 0.f; uint32_t judge_hash = 0; uint32_t day = 0; uint8_t band = 0; bool valid = false; };
+  struct LastProp { int choice = 0; float direction = 0.f, completeness_hat = 0.f; uint32_t judge_hash = 0; uint32_t day = 0; uint8_t band = 0; bool valid = false;
+                    // E0: the certificate beside the proposal, a fold of SENSE rows: the judge's
+                    // sensitivity to the shared fact, and the fact's epoch and value it was read at
+                    bool has_sens = false; float sens = 0.f, shared_x = 0.f; uint32_t shared_epoch = 0; };
   std::vector<LastProp>   last_prop;          // [oid]
   // C1: THE STRATA. The governor draws canary / audit / retained per open oid
   // before the machine's period and writes STRATUM rows; the gate reads them
@@ -247,6 +258,12 @@ struct Ledger {
         p.band = r.band; p.day = r.day; p.valid = true;
         return;
       }
+      case R_SENSE: {
+        if (r.oid >= last_prop.size()) last_prop.resize((size_t)r.oid + 1024, LastProp{});
+        LastProp& p = last_prop[r.oid];
+        p.has_sens = (r.b != 0); p.sens = r.margin; p.shared_x = r.value; p.shared_epoch = (uint32_t)r.a;
+        return;
+      }
       case R_STRATUM: {
         if (r.oid >= stratum_kind.size()) { const size_t n = (size_t)r.oid + 1024;
           stratum_kind.resize(n, 0); stratum_day.resize(n, 0); stratum_rate.resize(n, 0.f); stratum_audit.resize(n, 0.f); }
@@ -262,11 +279,13 @@ struct Ledger {
         o->decision = r.a; o->state = OB_DECIDED; o->day_decided = r.day; o->by_machine = 1;
         o->via = r.via; o->band = r.band; o->margin = r.margin;
         o->hold_reason = 0; o->hold_seat = -1; o->mhold_reason = 0; o->mhold_band = 0;
+        if (r.via == 1 || r.via == 3) add_exposure(o->cls, (double)cls_spec(o->cls).value);   // E0: the wager's value is in flight
         if (const LastProp* p = memo(r.oid)) o->completeness = p->completeness_hat;
         return;
       }
       case R_UNDO: {
         Obligation* o = at_oid(r.oid); if (!o) return;
+        release_exposure(*o);
         o->state = (uint8_t)r.b; o->seat = (int32_t)r.margin; o->day_decided = (uint32_t)r.value;
         o->by_machine = 0; o->via = 0;
         o->hold_reason = 0; o->hold_seat = -1; o->mhold_reason = 0; o->mhold_band = 0;
@@ -274,6 +293,7 @@ struct Ledger {
       }
       case R_OUTCOME: {
         Obligation* o = at_oid(r.oid); if (!o) return;
+        release_exposure(*o);                                // E0: a verdict, or a write-off, releases what the effect held
         o->outcome = (uint8_t)r.a; o->state = OB_SETTLED; o->day_settled = r.day;
         return;
       }
@@ -334,6 +354,10 @@ inline FoldDiff ledger_diff(const Ledger& L, const Ledger& w) {
     if (a.hold_reason != b.hold_reason || a.hold_seat != b.hold_seat) miss("hold in force", i);
     if (a.mhold_reason != b.mhold_reason || a.mhold_band != b.mhold_band) miss("machine hold in force", i);
     if (a.shadow_key != b.shadow_key) miss("shadow verdict in force", i);
+  }
+  for (int c = 0; c < L.NC; ++c) {
+    const double a = c < (int)L.outstanding.size() ? L.outstanding[c] : 0.0, b = c < (int)w.outstanding.size() ? w.outstanding[c] : 0.0;
+    if (std::fabs(a - b) > 1e-3 * std::max(1.0, std::fabs(a))) miss("outstanding exposure", (size_t)c);
   }
   if (L.open_idx != w.open_idx) miss("open_idx", 0);
   if (L.next_id != w.next_id) miss("next_id", 0);

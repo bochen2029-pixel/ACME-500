@@ -193,11 +193,13 @@ enum RecType : uint16_t {
                  // value = minutes, margin = completeness (on a decide act)
   R_RECEIPT,     // the executor confirmed (b = 0), refused (1) or failed (2) an effect. Never written by the machine.
   R_CORRECTION,  // a later reply corrected a reading: a = the corrected row's index, b = the reading judge's hash
+  R_SENSE,       // E0: the judge's sensitivity to a shared fact, beside its proposal: a = the fact's epoch,
+                 // b = 1 if the judge could say, margin = d signal / d fact, value = the fact's value read
   R_N
 };
 inline const char* rec_type_name(int t) {
   static const char* n[] = { "NONE","ARRIVE","ASSIGN","HOLD","DECIDE","EFFECT","UNDO","ESCALATE","OUTCOME","CONTEXT","MEETING",
-                             "TICK","LICENSE","KAPPA","PATCH","NOTE","HEADER","PROPOSAL","STRATUM","COUNSEL","ACT","RECEIPT","CORRECTION" };
+                             "TICK","LICENSE","KAPPA","PATCH","NOTE","HEADER","PROPOSAL","STRATUM","COUNSEL","ACT","RECEIPT","CORRECTION","SENSE" };
   return (t >= 0 && t < R_N) ? n[t] : "?";
 }
 enum ActKind : uint8_t { ACT_FETCH = 0, ACT_FRAME, ACT_DECIDE, ACT_COMMIT, ACT_TRANSPORT, ACT_REWORK, ACT_GLUE, ACT_MEETING, ACT_N };

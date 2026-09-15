@@ -159,7 +159,7 @@ inline WorkResult human_work(World& w, Ledger& L, Firm& f, Tape& tape, HumanStat
                                           + (s.kind >= SK_MANAGER ? 0.18f : 0.f));
   const float comp0 = (o.cls < 32) ? s.skill[o.cls] : 0.5f;
   const Read rd = observe(w, o, o.systems_opened, true, tacit_share,
-                          comp0 * (1.f - 0.30f * s.fatigue), 0x11ULL);
+                          comp0 * (1.f - 0.30f * s.fatigue), 0x11ULL, day);
   o.completeness = rd.completeness;
 
   // --- FRAME. Everything a person renders for another person's eyes. The

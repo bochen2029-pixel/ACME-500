@@ -31,6 +31,14 @@ struct Frame {
   uint32_t frame_hash = 0;       // the store's hash of the record's content: the cell's own rows,
                                  // the span contents; never the clock. The kernel folds the
                                  // template pin in before it keys the memo on it.
+  // E0: THE SHARED FACT. A record may hold a fact shared by many cells of its
+  // class (a supplier's date, a rate, a policy line). The store names its
+  // epoch and its value; base_hash is the record's hash with the shared fact
+  // held out, so the kernel can tell "only the shared fact moved" from "the
+  // record changed". The kernel never sees what the fact weighs.
+  uint32_t base_hash = 0;
+  uint32_t shared_epoch = 0;
+  float    shared_value = 0.f;
 };
 
 struct Proposal {
@@ -38,11 +46,19 @@ struct Proposal {
   float    signal = 0.f;         // the raw read; the machine scales it into a direction
   float    completeness_hat = 0.f;
   uint32_t judge_hash = 0;
+  // E0: THE CERTIFICATE. d signal / d shared_value, if the judge can say (an
+  // arithmetic judge can; a model judge cannot until calibration has measured
+  // a flip rate for it). With it the kernel carries a proposal across a change
+  // of the shared fact when the sign and the band survive, and reads only when
+  // they do not. Never the plant's weight as the kernel would see it: the
+  // judge's own answer, through the port.
+  float    sensitivity = 0.f;
+  bool     has_sens = false;
 };
 
 struct Store {
   virtual ~Store() {}
-  virtual Frame frame(uint32_t oid, int cls, uint32_t systems_mask) const = 0;
+  virtual Frame frame(uint32_t oid, int cls, uint32_t systems_mask, uint32_t day) const = 0;   // E0: the day names the shared fact's epoch
 };
 
 struct Judge {

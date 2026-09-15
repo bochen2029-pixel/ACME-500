@@ -35,6 +35,7 @@ enum Reason : uint8_t {
   RS_NO_BUDGET, RS_BLOCKED, RS_AUDIT, RS_CANARY, RS_UNSURE,
   RS_UNREAD,         // C1: the read budget never reached this cell and it carries no proposal: a hold
   RS_SWITCH_OFF,     // D2: the switch is off; the machine decides nothing and says so
+  RS_EXPOSURE,       // E0: the outstanding exposure would exceed the writ's cap; an act waits for a verdict to land
   RS_N
 };
 // THE SWITCH. Read from a file the machine never writes (INTELLECT) or from the
@@ -80,7 +81,7 @@ inline uint32_t alphabet_hash() {
   return (uint32_t)h[0] | ((uint32_t)h[1] << 8) | ((uint32_t)h[2] << 16) | ((uint32_t)h[3] << 24);
 }
 inline const char* reason_name(int r) {
-  static const char* n[] = {"ok","unlicensed","thin-margin","novel-case","irreversible","law","no-adjudication-budget","blocked-by-dep","audit-sample","canary","unsure-placement","unread","switch-off"};
+  static const char* n[] = {"ok","unlicensed","thin-margin","novel-case","irreversible","law","no-adjudication-budget","blocked-by-dep","audit-sample","canary","unsure-placement","unread","switch-off","exposure"};
   return n[r % RS_N];
 }
 
@@ -98,6 +99,8 @@ struct GateIn {
   bool  in_audit;        // the sampled review fraction that never reaches zero
   float budget_left;     // adjudication minutes remaining today
   int   sw;              // D2: the switch, folded from the tape; off holds everything
+  float value;           // E0: the class value at stake, what an unattended act adds to the outstanding exposure
+  float exposure_left;   // E0: the writ's cap less the outstanding exposure; 1e30 when uncapped
 };
 struct GateOut { uint8_t verdict; uint8_t reason; };
 
@@ -122,6 +125,7 @@ inline GateOut gate(const GateIn& g, const Writ& wr) {
   if (!g.reversible && g.rung < 4)            return { V_WARRANT,  RS_IRREVERSIBLE };
   if (g.rung == 1 && !g.in_canary)            return { V_DRAFT,    RS_UNLICENSED };
   if (g.budget_left <= 0.f && g.rung < 3)     return { V_HOLD,     RS_NO_BUDGET };
+  if (g.exposure_left < g.value)              return { V_HOLD,     RS_EXPOSURE };   // E0: risk in flight is capped; an act waits, never a person's decision
   return { V_ACT, g.in_canary ? RS_CANARY : RS_OK };
 }
 

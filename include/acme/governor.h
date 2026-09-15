@@ -107,6 +107,7 @@ struct Governor {
     for (size_t i = from_row; i < tape.rec.size(); ++i) {
       const Rec& r = tape.rec[i];
       if (r.type != R_OUTCOME || r.cls >= NC) continue;
+      if (r.a == OK_UNRESOLVED) continue;                        // E0: the world never answered; a write-off licenses nothing and demotes nothing
       lad.observe(r.cls, r.band, (int)r.via, r.a == OK_GOOD, lad.p_incumbent(r.cls, r.band));
     }
   }

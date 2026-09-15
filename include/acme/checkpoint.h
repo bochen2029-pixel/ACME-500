@@ -59,11 +59,13 @@ inline void ser(Ser& s, const Ledger& L) {
   s.pod(L.NC); s.vec(L.ob); s.vec(L.idx_of_oid); s.vec(L.open_idx); s.pod(L.next_id); s.pod(L.day);
   s.pod(L.mode); s.pod(L.sw); s.pod(L.schema); s.pod(L.ver); s.vec(L.by_class); s.pod(L.total);
   s.vec(L.last_prop); s.vec(L.stratum_kind); s.vec(L.stratum_day); s.vec(L.stratum_rate); s.vec(L.stratum_audit);
+  s.vec(L.outstanding); s.pod(L.outstanding_total);
 }
 inline void des(Des& d, Ledger& L) {
   d.pod(L.NC); d.vec(L.ob); d.vec(L.idx_of_oid); d.vec(L.open_idx); d.pod(L.next_id); d.pod(L.day);
   d.pod(L.mode); d.pod(L.sw); d.pod(L.schema); d.pod(L.ver); d.vec(L.by_class); d.pod(L.total);
   d.vec(L.last_prop); d.vec(L.stratum_kind); d.vec(L.stratum_day); d.vec(L.stratum_rate); d.vec(L.stratum_audit);
+  d.vec(L.outstanding); d.pod(L.outstanding_total);
 }
 inline void ser(Ser& s, const HumanStats& h) {
   s.pod(h.time); s.vec(h.by_class); s.pod(h.completeness); s.pod(h.hops); s.pod(h.cycle_days);
@@ -117,12 +119,12 @@ inline void des(Des& d, MachineStats& m) {
 inline void ser(Ser& s, const Resident& r) {
   ser(s, r.fd); ser(s, r.C); s.vec(r.hand.ledger); s.pod(r.hand.n_undone); ser(s, r.st);
   s.pod(r.sup.NC); s.vec(r.sup.cre); s.vec(r.sup.rem); s.pod(r.wr); s.pod(r.adjudication_budget_min);
-  s.pod(r.NC); s.pod(r.NS); s.pod(r.lr); s.vec(r.memo_hash);
+  s.pod(r.NC); s.pod(r.NS); s.pod(r.lr); s.vec(r.memo_hash); s.vec(r.memo_base); s.vec(r.epoch_seen);
 }
 inline void des(Des& d, Resident& r) {
   des(d, r.fd); des(d, r.C); d.vec(r.hand.ledger); d.pod(r.hand.n_undone); des(d, r.st);
   d.pod(r.sup.NC); d.vec(r.sup.cre); d.vec(r.sup.rem); d.pod(r.wr); d.pod(r.adjudication_budget_min);
-  d.pod(r.NC); d.pod(r.NS); d.pod(r.lr); d.vec(r.memo_hash);
+  d.pod(r.NC); d.pod(r.NS); d.pod(r.lr); d.vec(r.memo_hash); d.vec(r.memo_base); d.vec(r.epoch_seen);
 }
 inline void ser(Ser& s, const Ladder& L) {
   s.pod(L.NC); s.vec(L.lic); s.pod(L.alpha_promote); s.pod(L.alpha_demote); s.pod(L.term_days);

@@ -126,7 +126,27 @@ struct World {
 
   int NC = 0;
   float demand_scale = 1.0f;   // tunes the firm's utilisation; 1.0 is the schema's nominal rate
+  // E0: THE SHARED FACT. One determinant per class, in one of its systems,
+  // whose value is shared by every cell of the class and moves at a planted
+  // rate (a supplier's date, a rate table, a policy line): one change moves
+  // every open frame of the class at once. Off by default; every reading is
+  // identical to D3 until it is on.
+  bool  shared = false;
+  float flip_rate = 0.f;                   // per class per day
+  std::vector<int> shared_det;             // [class] the index of the shared determinant, or -1
+  std::vector<std::vector<uint32_t>> flips;// [class] the days the fact changed, ascending
+  // E0: THE WORLD THAT DOES NOT ANSWER. A decided cell is never graded with
+  // this probability; the writ's write-off rule closes it as UNRESOLVED.
+  float unresolved_rate = 0.f;
 };
+// the epoch of a class's shared fact on a day: how many changes are at or before it
+inline uint32_t shared_epoch(const World& w, int c, uint32_t day) {
+  if (!w.shared) return 0;
+  const std::vector<uint32_t>& f = w.flips[c];
+  uint32_t e = 0; for (uint32_t d : f) { if (d <= day) ++e; else break; }
+  return e;
+}
+inline float shared_x(const World& w, int c, uint32_t epoch) { return w.shared ? unrm(w.seed, 5100 + c, epoch) : 0.f; }
 
 // ----------------------------------------------------------------------------
 // §1 · Build ACME: a 500-seat knowledge-work headquarters.   [moved here in C1]
@@ -278,11 +298,12 @@ inline Firm build_acme(int target_n = 500, int span = 7, uint64_t seed = 2026091
 // ----------------------------------------------------------------------------
 // §2 · Build the world's ground truth: which facts decide what, and where they live.
 // ----------------------------------------------------------------------------
-inline World make_world(uint64_t seed) {
-  World w; w.seed = seed;
+inline World make_world(uint64_t seed, bool shared = false, float flip_rate = 0.025f, float unresolved_rate = 0.f, int horizon_days = 4000) {
+  World w; w.seed = seed; w.shared = shared; w.flip_rate = shared ? flip_rate : 0.f; w.unresolved_rate = unresolved_rate;
   schema(w.NC);
   assert_planted_aligned();
   w.spec.resize(w.NC); w.tacit.assign(w.NC, 0.f); w.n_det.assign(w.NC, 0);
+  w.shared_det.assign(w.NC, -1); w.flips.assign(w.NC, {});
 
   for (int c = 0; c < w.NC; ++c) {
     const PlantedSpec& s = planted(c);
@@ -317,11 +338,20 @@ inline World make_world(uint64_t seed) {
       }
     }
     for (Determinant& x : t.det) x.weight /= tot;
+    // E0: the shared determinant, appended, in one of the class's systems, at a
+    // fifth of the class's mass; its value is shared_x(c, epoch), never per cell
+    if (shared) {
+      Determinant x; x.where = DW_SYSTEM; x.system = (uint8_t)ubelow(seed, 1450 + c, 0, std::max<int>(1, s.n_systems)); x.weight = 0.25f;
+      for (Determinant& y : t.det) y.weight /= 1.25f;
+      x.weight /= 1.25f;
+      t.det.push_back(x); w.shared_det[c] = (int)t.det.size() - 1;
+      for (int d = 0; d < horizon_days; ++d) if (u01(seed, 5150 + c, (uint32_t)d) < w.flip_rate) w.flips[c].push_back((uint32_t)d);
+    }
     for (const Determinant& x : t.det) {
       if (x.where == DW_TACIT) t.tacit_mass += x.weight;
       if (x.where == DW_SYSTEM) t.system_mass += x.weight;
     }
-    w.tacit[c] = t.tacit_mass; w.n_det[c] = nd;
+    w.tacit[c] = t.tacit_mass; w.n_det[c] = (int)t.det.size();
   }
   return w;
 }
@@ -391,13 +421,21 @@ inline void world_arrive(World& w, Ledger& L, Tape& tape, uint32_t day) {
 inline float det_value(const World& w, uint32_t oid, int d) {
   return unrm(w.seed, 5000 + d, oid);
 }
-inline float full_signal(const World& w, const Obligation& o) {
+// E0: the value of determinant d of a cell at a shared epoch: the shared
+// determinant reads the class's shared value, every other one its own
+inline float det_value_at(const World& w, int cls, uint32_t oid, int d, uint32_t epoch) {
+  if (w.shared && d == w.shared_det[cls]) return shared_x(w, cls, epoch);
+  return det_value(w, oid, d);
+}
+inline float full_signal(const World& w, const Obligation& o, uint32_t epoch) {
   const TrueSpec& t = w.spec[o.cls];
   float s = 0.f;
-  for (size_t d = 0; d < t.det.size(); ++d) s += t.det[d].weight * det_value(w, o.id, (int)d);
+  for (size_t d = 0; d < t.det.size(); ++d) s += t.det[d].weight * det_value_at(w, o.cls, o.id, (int)d, epoch);
   return s;
 }
-inline int truth_decision(const World& w, const Obligation& o) { return full_signal(w, o) > 0.f ? 1 : 0; }
+// the truth of a cell is the truth in force when it was decided: the shared
+// fact's epoch on the day of the decision
+inline int truth_decision(const World& w, const Obligation& o) { return full_signal(w, o, shared_epoch(w, o.cls, o.day_decided)) > 0.f ? 1 : 0; }
 
 // What a decider gathers, before any judgement: the determinants in hand,
 // summed with their weights, and the completeness that sum represents.
@@ -407,7 +445,7 @@ inline int truth_decision(const World& w, const Obligation& o) { return full_sig
 // behind the port can add its OWN noise from its OWN key (F16).
 struct Gathered { float signal; float completeness; };
 inline Gathered gather(const World& w, uint32_t oid, int cls, uint32_t systems_mask,
-                       bool read_boundary, float tacit_share) {
+                       bool read_boundary, float tacit_share, uint32_t epoch) {
   const TrueSpec& t = w.spec[cls];
   Gathered g{}; g.signal = 0.f; g.completeness = 0.f;
   for (size_t d = 0; d < t.det.size(); ++d) {
@@ -418,7 +456,7 @@ inline Gathered gather(const World& w, uint32_t oid, int cls, uint32_t systems_m
       case DW_SYSTEM:   share = (systems_mask & (1u << x.system)) ? 1.f : 0.f; break;
       case DW_TACIT:    share = tacit_share; break;
     }
-    g.signal += share * x.weight * det_value(w, oid, (int)d);
+    g.signal += share * x.weight * det_value_at(w, cls, oid, (int)d, epoch);
     g.completeness += share * x.weight;
   }
   g.completeness = std::min(1.f, g.completeness);
@@ -437,8 +475,8 @@ inline float judgement_noise_sd(int cls, float competence) {
 struct Read { float signal; float completeness; int choice; };
 inline Read observe(const World& w, const Obligation& o, uint32_t systems_mask,
                     bool read_boundary, float tacit_share, float competence,
-                    uint64_t noise_key) {
-  const Gathered g = gather(w, o.id, o.cls, systems_mask, read_boundary, tacit_share);
+                    uint64_t noise_key, uint32_t day) {
+  const Gathered g = gather(w, o.id, o.cls, systems_mask, read_boundary, tacit_share, shared_epoch(w, o.cls, day));
   Read r{}; r.signal = g.signal; r.completeness = g.completeness;
   r.signal += judgement_noise_sd(o.cls, competence) * unrm(w.seed ^ noise_key, 5200, o.id);
   r.choice = (r.signal > 0.f) ? 1 : 0;
@@ -454,15 +492,28 @@ inline void world_settle(World& w, Ledger& L, const Firm& f, Tape& tape, uint32_
     if (o.state != OB_DECIDED) continue;
     const ClassSpec& s = cls_spec(o.cls);
     if (day < o.day_decided + s.verdict_latency) continue;
+    // E0: THE WORLD THAT DOES NOT ANSWER. With the planted rate the verdict never
+    // comes; the writ's write-off rule closes the cell as UNRESOLVED after
+    // write_off_terms latencies, by an explicit row that is evidence for nothing
+    // and releases the exposure it held. A timeout never becomes a success.
+    const bool answers = (w.unresolved_rate <= 0.f) || (u01(w.seed, 5300 + o.cls, o.id) >= w.unresolved_rate);
+    if (!answers) {
+      if (day < o.day_decided + (uint32_t)f.writ.write_off_terms * s.verdict_latency) continue;
+      o.outcome = OK_UNRESOLVED; o.state = OB_SETTLED; o.day_settled = day;
+      L.release_exposure(o);
+      tape.put(R_OUTCOME, day, o.id, o.cls, o.by_machine ? -1 : o.seat, o.by_machine ? ARM_MACHINE : ARM_HUMAN,
+               o.outcome, (int)o.via, o.margin, (float)outcome_cost(f.writ, s, o.outcome), o.band, 0, o.via, PROV_D);
+      continue;
+    }
     // THE EXOGENOUS GRADER. Was the choice the right one, and was it in time?
     // Nothing inside the firm writes this, and it does not know or care who
     // decided — the physics has no branch on human versus machine.
-    (void)f;
     const bool right = (o.decision == truth_decision(w, o));
     const bool on_time = (o.day_decided <= o.day_due);
     o.outcome = (uint8_t)(right ? (on_time ? OK_GOOD : OK_LATE) : OK_BAD);
     o.state = OB_SETTLED;
     o.day_settled = day;
+    L.release_exposure(o);
     // v2: the row names THE DECIDER (seat, arm) and carries the via, so the
     // ladder is a fold of OUTCOME rows joined to nothing else (F18, F19).
     tape.put(R_OUTCOME, day, o.id, o.cls, o.by_machine ? -1 : o.seat, o.by_machine ? ARM_MACHINE : ARM_HUMAN,
@@ -492,14 +543,22 @@ inline void world_settle(World& w, Ledger& L, const Firm& f, Tape& tape, uint32_
 struct PlantStore : Store {
   const World* w;
   explicit PlantStore(const World* world) : w(world) {}
-  Frame frame(uint32_t oid, int cls, uint32_t systems_mask) const override {
+  Frame frame(uint32_t oid, int cls, uint32_t systems_mask, uint32_t day) const override {
     Frame f; f.cls = cls; f.oid = oid; f.systems_mask = systems_mask; f.boundary = true;
     f.coverage_hat = 0.f;                                                  // the kernel's to stamp
     // the record's content hash: in the synthetic world the record is a pure
-    // function of (oid, cls, mask); a real store hashes the cell's rows
+    // function of (oid, cls, mask) and, E0, the shared fact's epoch; a real
+    // store hashes the cell's rows and the spans. base_hash holds the shared
+    // fact out, so the kernel can tell the two kinds of change apart.
+    const uint32_t epoch = shared_epoch(*w, cls, day);
+    const bool in_frame = w->shared && w->shared_det[cls] >= 0 && (systems_mask & (1u << w->spec[cls].det[w->shared_det[cls]].system));
     Blake2b b; b.update(&oid, 4); b.update(&cls, 4); b.update(&systems_mask, 4);
     uint8_t h[32]; b.final(h);
-    f.frame_hash = (uint32_t)h[0] | ((uint32_t)h[1] << 8) | ((uint32_t)h[2] << 16) | ((uint32_t)h[3] << 24);
+    f.base_hash = (uint32_t)h[0] | ((uint32_t)h[1] << 8) | ((uint32_t)h[2] << 16) | ((uint32_t)h[3] << 24);
+    if (in_frame) { Blake2b b2; b2.update(&f.base_hash, 4); b2.update(&epoch, 4); b2.final(h);
+      f.frame_hash = (uint32_t)h[0] | ((uint32_t)h[1] << 8) | ((uint32_t)h[2] << 16) | ((uint32_t)h[3] << 24);
+      f.shared_epoch = epoch; f.shared_value = shared_x(*w, cls, epoch);
+    } else f.frame_hash = f.base_hash;
     return f;
   }
 };
@@ -513,12 +572,20 @@ struct PlantJudge : Judge {
   PlantJudge(const World* world, uint64_t seed, uint32_t hash_, float comp0, bool learns_)
     : w(world), judge_seed(seed), id_hash(hash_), learns(learns_), comp(world->NC, comp0), comp_n(world->NC, 0.f) {}
   Proposal read(const Frame& f) override {
-    const Gathered g = gather(*w, f.oid, f.cls, f.systems_mask, f.boundary, 0.f);
+    const Gathered g = gather(*w, f.oid, f.cls, f.systems_mask, f.boundary, 0.f, f.shared_epoch);
     Proposal p;
     p.signal = g.signal + judgement_noise_sd(f.cls, competence(f.cls)) * unrm(judge_seed, 5200, f.oid);
     p.choice = (p.signal > 0.f) ? 1 : 0;
     p.completeness_hat = f.coverage_hat;                                   // it reports what it was told it holds
     p.judge_hash = id_hash;
+    // E0: an arithmetic judge can say what the shared fact weighs in ITS read:
+    // its own certificate, through the port. Its noise is per cell and does not
+    // move with the fact, so the certificate is exact for this judge.
+    if (w->shared && w->shared_det[f.cls] >= 0) {
+      const Determinant& x = w->spec[f.cls].det[w->shared_det[f.cls]];
+      p.has_sens = true;
+      p.sensitivity = (f.systems_mask & (1u << x.system)) ? x.weight : 0.f;
+    }
     return p;
   }
   // The rented mind's coin, drawn by the judge on its own key (F16).

@@ -231,7 +231,7 @@ inline ReplayOut replay(const Ledger& L, const Firm& f, Field& fd, const Compile
     // no cost, with no decay — and NOTHING tacit, because the phone call the
     // coordinator made was never written down anywhere it can reach. What it
     // believes the frame holds is the compile step's coverage, never the plant's.
-    Frame fr = store.frame(o.id, c, C.join_graph[c]);
+    Frame fr = store.frame(o.id, c, C.join_graph[c], o.day_decided);   // E0: the record as it stood when the firm decided
     fr.coverage_hat = C.coverage_hat(c);
     const Proposal mr = judge.read(fr);
     const float z = 4.0f * mr.signal * (0.35f + 0.65f * mr.completeness_hat);
@@ -317,6 +317,17 @@ struct MachineStats {
   double   forgone_dual = 0;      // sum over periods of |u_i| over the cells left unread
   double   total_dual = 0;        // sum over periods of |u_i| over every open cell
   int      periods = 0;
+  // E0: THE SHARED FACT'S ACCOUNT, counted separately as the receipt requires
+  uint64_t shared_events = 0;      // changes of a shared fact seen by the machine (per class per epoch)
+  uint64_t shared_affected = 0;    // cells whose frame changed only by the shared fact
+  uint64_t incr_updates = 0;       //   of which carried by the certificate: sign and band survived, no read
+  uint64_t shared_full_reads = 0;  //   of which read again: the sign or the band would cross, or no certificate
+  uint64_t shared_flip_choice = 0; //     of those reads: the choice changed
+  uint64_t shared_flip_band = 0;   //     of those reads: the band changed
+  uint64_t incr_checked = 0;       // incremental updates re-read against the judge (--check-shared)
+  uint64_t incr_discrepancies = 0; //   of which the judge's sign or band disagreed with the certificate
+  uint64_t exposure_holds = 0;     // acts held because the outstanding exposure would exceed the cap
+  double   out_max = 0.0;          // the largest outstanding exposure seen at a period's close
   void init(int nc) { acted_by_class.assign(nc, 0); reason_count.assign(RS_N, 0); }
   double kappa() const { return sup_removed_min > 1e-9 ? sup_created_min / sup_removed_min : 9.99; }
 };
@@ -333,6 +344,11 @@ struct Resident {
   int     NC = 0, NS = 0;
   float   lr = 0.02f;
   std::vector<uint32_t> memo_hash;       // [oid] the frame hash the cell's last proposal was read under
+  std::vector<uint32_t> memo_base;       // [oid] E0: the record's hash with the shared fact held out, at that read
+  std::vector<uint32_t> epoch_seen;      // [cls] E0: the last shared epoch the machine saw for the class (+1; 0 none)
+  bool    check_shared = false;          // E0: re-read every incremental update against the judge and count disagreements (a measurement mode)
+  bool    lie_stale_certificate = false; // O37's lie: carry the old direction across a change of the shared fact. Never set outside the battery.
+  bool    lie_ignore_cap = false;        // O38's lie: one cell in a hundred acts past the exposure cap. Never set outside the battery.
   bool    lie_reads_clock = false;       // O25's lie: a resident that reads the TICK row's wall value. Never set outside the battery.
   bool    lie_effect_under_off = false;  // O19's lie: a resident that lets one cell through with the switch off. Never set outside the battery.
   bool    lie_silent_proposal = false;   // O30's lie: a proposal folded into the memo without its row. Never set outside the battery.
@@ -427,17 +443,54 @@ inline void Resident::period(Ledger& L, Firm& f, Tape& tape, const Store& store,
   // own hygiene (it checks the judge's consistency, not the arena) and is drawn
   // on the kernel's key, never the governor's salt.
   std::vector<Frame> frames(N);
-  std::vector<uint8_t> has_prop(N, 0), needs_read(N, 0);
+  std::vector<uint8_t> has_prop(N, 0), needs_read(N, 0), shared_read(N, 0);
   std::vector<int> cand;
+  if ((int)epoch_seen.size() < NC) epoch_seen.assign(NC, 0u);
   for (int i = 0; i < N; ++i) {
     const Obligation& o = L.ob[rows[i]]; const int c = o.cls;
-    Frame fr = store.frame(o.id, c, C.join_graph[c]);
+    Frame fr = store.frame(o.id, c, C.join_graph[c], day);
     fr.frame_hash ^= C.template_hash[c];                       // the memo key: the record and the template, never the clock
+    fr.base_hash  ^= C.template_hash[c];
     fr.coverage_hat = mach_complete[i];
     frames[i] = fr;
-    if (o.id >= memo_hash.size()) memo_hash.resize((size_t)o.id + 1024, 0u);
+    if (o.id >= memo_hash.size()) { memo_hash.resize((size_t)o.id + 1024, 0u); memo_base.resize((size_t)o.id + 1024, 0u); }
+    if (fr.shared_epoch + 1 > epoch_seen[c]) { if (epoch_seen[c] != 0) ++st.shared_events; epoch_seen[c] = fr.shared_epoch + 1; }
     const Ledger::LastProp* m = L.memo(o.id);
-    const bool valid = m && m->judge_hash == judge.hash() && memo_hash[o.id] == fr.frame_hash;
+    const bool same_judge = m && m->judge_hash == judge.hash();
+    bool valid = same_judge && memo_hash[o.id] == fr.frame_hash;
+    // E0: ONLY THE SHARED FACT MOVED. The record's own hash still matches and
+    // the fact's epoch does not: the proposal is carried across the change by
+    // the judge's certificate when the sign and the band both survive, as a
+    // PROPOSAL row with via 1 and its SENSE row, so O30 re-derives the effect
+    // and a fold re-derives the carry; otherwise the cell is read again.
+    if (!valid && same_judge && memo_base[o.id] == fr.base_hash && m->shared_epoch != fr.shared_epoch) {
+      ++st.shared_affected;
+      bool carried = false;
+      if (m->has_sens && !lie_stale_certificate) {
+        const float dir_new = m->direction + 4.0f * m->sens * (0.35f + 0.65f * m->completeness_hat) * (fr.shared_value - m->shared_x);
+        // the certificate carries only with a margin of safety at the sign and at
+        // both band edges: a direction within CERT_TOL of an edge is read again,
+        // so float rounding between the carry and a fresh read can never differ
+        const float tol = 1e-3f; const int old_b = band_of(m->direction, wr);
+        if (std::fabs(dir_new) > tol && (dir_new > 0.f) == (m->direction > 0.f)
+            && band_of(dir_new - tol, wr) == old_b && band_of(dir_new + tol, wr) == old_b) {
+          const int b = band_of(dir_new, wr);
+          put_fold(tape, L, R_PROPOSAL, day, o.id, c, -1, ARM_MACHINE, m->choice, (int)m->judge_hash, dir_new, m->completeness_hat, b, 0, 1, PROV_M);
+          put_fold(tape, L, R_SENSE, day, o.id, c, -1, ARM_MACHINE, (int)fr.shared_epoch, 1, m->sens, fr.shared_value, b, 0, 0, PROV_M);
+          memo_hash[o.id] = fr.frame_hash; memo_base[o.id] = fr.base_hash;
+          carried = true; ++st.incr_updates;
+          if (check_shared) {                                   // the measurement mode: the judge's own read against the certificate
+            const Proposal chk = judge.read(fr);
+            const float dir_chk = 4.0f * chk.signal * (0.35f + 0.65f * chk.completeness_hat);
+            ++st.incr_checked;
+            if ((dir_chk > 0.f) != (dir_new > 0.f) || band_of(dir_chk, wr) != b) ++st.incr_discrepancies;
+          }
+        }
+      } else if (lie_stale_certificate) {                       // THE LIE (O37): the old proposal carried as if nothing moved
+        memo_hash[o.id] = fr.frame_hash; memo_base[o.id] = fr.base_hash; carried = true; ++st.incr_updates;
+      }
+      if (carried) valid = true; else shared_read[i] = 1;
+    }
     const bool floor = valid && !clock_high && (u01(0x524541444BULL /*'READK'*/, 7400 + c, o.id * 131u + day) < wr.eps_floor);   // clock_high is O25's lie
     if (valid) has_prop[i] = 1;
     if (!valid || floor) { needs_read[i] = 1; cand.push_back(i); }
@@ -452,6 +505,11 @@ inline void Resident::period(Ledger& L, Firm& f, Tape& tape, const Store& store,
     const Proposal mr = judge.read(frames[i]);
     const float direction = 4.0f * mr.signal * (0.35f + 0.65f * mr.completeness_hat);
     const int   b = band_of(direction, wr);
+    if (shared_read[i]) {                                        // E0: a read the shared fact forced: did anything change?
+      ++st.shared_full_reads;
+      const Ledger::LastProp* old = L.memo(o.id);
+      if (old) { if (old->choice != mr.choice) ++st.shared_flip_choice; if (band_of(old->direction, wr) != b) ++st.shared_flip_band; }
+    }
     // v2: the proposal is a row BEFORE the verdict, whatever the gate then says.
     // It feeds nothing; it is what the machine thought, on the record. C1: it is
     // written on a read only, and folded into the ledger's memo as it is written.
@@ -461,7 +519,9 @@ inline void Resident::period(Ledger& L, Firm& f, Tape& tape, const Store& store,
       L.apply(Tape::make(R_PROPOSAL, day, o.id, c, -1, ARM_MACHINE, mr.choice, (int)mr.judge_hash, direction, mr.completeness_hat, b, 0, 0, PROV_M));
     else
       put_fold(tape, L, R_PROPOSAL, day, o.id, c, -1, ARM_MACHINE, mr.choice, (int)mr.judge_hash, direction, mr.completeness_hat, b, 0, 0, PROV_M);
-    memo_hash[o.id] = frames[i].frame_hash;
+    if (mr.has_sens)                                             // E0: the certificate beside the proposal, on the record
+      put_fold(tape, L, R_SENSE, day, o.id, c, -1, ARM_MACHINE, (int)frames[i].shared_epoch, 1, mr.sensitivity, frames[i].shared_value, b, 0, 0, PROV_M);
+    memo_hash[o.id] = frames[i].frame_hash; memo_base[o.id] = frames[i].base_hash;
     has_prop[i] = 1; ++reads_now; ++st.reads;
   }
   for (int i = 0; i < N; ++i) if (has_prop[i] && !needs_read[i]) ++st.memo_hits;
@@ -514,6 +574,9 @@ inline void Resident::period(Ledger& L, Firm& f, Tape& tape, const Store& store,
     g.in_audit  = (stratum == 2);
     g.budget_left = (float)(adjudication_budget_min - adj_used * 45.0);
     g.sw = L.sw;
+    g.value = sp.value;                                           // E0: what an unattended act would put in flight
+    g.exposure_left = (wr.exposure_cap > 0.f) ? (float)((double)wr.exposure_cap - L.outstanding_total) : 1e30f;
+    if (lie_ignore_cap && (o.id % 100u) == 7u) g.exposure_left = 1e30f;   // THE LIE (O38)
     if (lie_effect_under_off && L.sw == SW_OFF && (i % 500) == 7) g.sw = SW_LIVE;   // THE LIE (O19)
 
     const GateOut v = gate(g, wr);
@@ -537,6 +600,9 @@ inline void Resident::period(Ledger& L, Firm& f, Tape& tape, const Store& store,
         break;
       }
       case V_FRONTIER: {
+        // E0: the rented mind's act is the wager too; it consumes exposure like
+        // an unattended act, so the cap holds it before the rental is paid
+        if (g.exposure_left < g.value) { ++st.exposure_holds; mhold(RS_EXPOSURE, b, direction); break; }
         // rent a bigger mind for this one cell. It costs money and, because a
         // human still reads the answer at low rungs, a little supervision.
         ++st.frontier; st.frontier_calls += 1.0;
@@ -585,11 +651,13 @@ inline void Resident::period(Ledger& L, Firm& f, Tape& tape, const Store& store,
         break;
       }
       default: {
+        if (v.reason == RS_EXPOSURE) ++st.exposure_holds;
         mhold(v.reason, b, direction);
         break;
       }
     }
   }
+  st.out_max = std::max(st.out_max, L.outstanding_total);      // E0: the exposure ledger at the period's close
 }
 
 // Outcomes arrive. The field learns from them; the judge is told about the cells
@@ -600,6 +668,7 @@ inline void Resident::grade(Ledger& L, Judge& judge, Judge& frontier) {
   float ftmp[FT_N];
   for (Obligation& o : L.ob) {
     if (o.state != OB_SETTLED || o.day_settled != day) continue;
+    if (o.outcome == OK_UNRESOLVED) continue;                    // E0: a write-off is no evidence, for the head or the judge
     const int c = o.cls; const ClassSpec& sp = cls_spec(c);
     // CORRECTNESS AND TIMELINESS ARE DIFFERENT QUANTITIES AND MUST NOT SHARE A
     // GRADER. Whether the answer was right is a property of the decider; whether

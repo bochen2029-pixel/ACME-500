@@ -277,6 +277,7 @@ struct Integrator {
     o.margin = margin;
     o.hold_reason = 0; o.hold_seat = -1; o.mhold_reason = 0; o.mhold_band = 0;   // D0: an effect ends every hold in force
     o.shadow_key = 0;
+    if (via == 1 || via == 3) L.add_exposure(o.cls, (double)cls_spec(o.cls).value);   // E0: the wager's value is in flight until the verdict
     return true;
   }
   // An effect is reversible only until the world reacts to it, and the world's
@@ -289,6 +290,7 @@ struct Integrator {
     for (Obligation& o : L.ob) {
       if (o.id != e.oid) continue;
       if (o.state == OB_SETTLED) return false;            // the world already reacted
+      L.release_exposure(o);                                // E0: an undone effect holds nothing
       o.state = e.prev_state; o.seat = e.prev_seat; o.day_decided = e.prev_decided; o.by_machine = 0; o.via = 0;
       o.hold_reason = 0; o.hold_seat = -1; o.mhold_reason = 0; o.mhold_band = 0;
       // the row carries everything the inverse restores: prev_state (b), prev_seat (margin), prev_decided (value)

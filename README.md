@@ -2,7 +2,7 @@
 
 **A virtual enterprise of 500 knowledge workers, and its automation, in one C++17 binary with no dependencies. It exists so that a method for automating organizations can be graded by a world that answers in seconds instead of quarters, and can fail cheaply before any real firm is asked to be the grader.**
 
-5,832 lines on branch `v2` (v1 is tag `v1-step-A`). Five modes. Twenty-six oracles in the binary and four on the source tree, each carrying a lie that it must be seen to catch. Every number it prints is a reading, and the readings that turned out wrong are printed as retractions in the receipts.
+6,148 lines on branch `v2` (v1 is tag `v1-step-A`). Five modes. Twenty-eight oracles in the binary and four on the source tree, each carrying a lie that it must be seen to catch. Every number it prints is a reading, and the readings that turned out wrong are printed as retractions in the receipts.
 
 ```
 g++ -O2 -std=c++17 -Iinclude -Wall -Wextra -ffp-contract=off src/main.cpp -o acme
@@ -39,6 +39,7 @@ It is a falsifier first, a gym second, and a demonstrator last. **It tests the i
 | [step B](receipts/RECEIPT_ACME500_STEP-B_2026-09-14.md) and its remediation | the record is v2 (40 bytes, `via`, `arm` = the decider); the rows the fold was missing; `ledger.h` folds the tape into every cell and the minute meter; O14 fold-to-identity, O15 the ladder is a fold, O25a no clock in the kernel, O29 row shape; the alphabet pin; 20 of 20 with eighteen lie arms; every reading identical |
 | [step C0](receipts/RECEIPT_ACME500_STEP-C0_2026-09-14.md) | every consumer reads the folded ledger; the port (`Store::frame`, `Judge::read`) with the plant behind it; O17, the machine links without the plant; the prints that attribute (minutes by via, the binding reason per band, the frame split, the row histogram); every reading identical; F21 found and recorded |
 | [step C1](receipts/RECEIPT_ACME500_STEP-C1_2026-09-14.md) | the judge on its own key with its own competence (F16); the kernel's completeness from the compile step; the planted half of the class table out of the kernel's reach (`planted(c)`, `build_acme` in the plant, the cascade fitted from a handed panel, kappa's denominator metered from rows); the read budget with the memo keyed on the frame; the governor in its own translation unit writing STRATUM, LICENSE and KAPPA rows; the licence keyed to the judge; O16, O21, O17 with a second lie; 22 of 22 with twenty lie arms; the first step to move a number, every delta named; F22 found and fixed |
+| [step E](receipts/RECEIPT_ACME500_STEP-E_2026-09-15.md), in progress | E0: a shared fact per class that moves; the judge's certificate through the port carries a proposal across a change when sign and band survive (789 of 2,062 moved frames at 500 seats, 0 disagreements against a fixed judge, O37); unresolved outcomes closed only by a write-off row that is evidence for nothing; outstanding exposure as a fold with the writ's cap (O38): the uncapped machine holds $96M in flight at peak and the licence follows the cap; 28 of 28 with twenty-six lie arms; every default reading identical to D2 |
 | [step D](receipts/RECEIPT_ACME500_STEP-D_2026-09-14.md) | D0: holds and strata as rows on change (the sim's tape 5.67M → 1.61M rows), the TICK-driven loop; D1: the durable tape in segments with the chain head in each header, the checkpoint with its meta written last, `--resume` from the newest valid one, `--dump` on the observer's contract, O18 with its lie and a real SIGKILL survived; D2: the switch `off/shadow/live/stop` from a file the machine never writes, the pill, the gate as a hashed library (O30a), every EFFECT re-derived from rows (O30), off invisible (O19), shadow agreement 87.2%; D3: the dynamic O25; 26 of 26 with twenty-four lie arms; every reading identical to C1 under `live` |
 
 The readings as they stand after step C1, synthetic firm, one writ, 500 seats, demand 1.5 (the C1 receipt names what moved from v1 and why):
@@ -47,6 +48,7 @@ The readings as they stand after step C1, synthetic firm, one writ, 500 seats, d
 - **The reads.** With the memo keyed on the frame, the resident reads 1,729 cells a period against 3,328 when it re-read every open cell every day; 1,462 a period are carried forward. Behind the port a read is a forward pass, and the read budget is a dial: at 4,000 a day against the 84,000-cell warm backlog the machine wins the queue in a fortnight instead of a day and loses seven points of good rate on the way.
 - **The cascade.** Licensed decision mass 63.5 percent. Headcount 500 → 193 with the intercept fitted, 182 with the origin fit that promises a company physics does not allow. The first run printed 500 → 57; that number rested on two of the seven defects and is retracted.
 - **The path.** Cells a person decided take 12.0 rows, 1.11 seats and 22.4 days from arrival to disposition; cells the machine disposed of take 6.6 rows, 0.38 seats and 41.1 days — shorter in every row and seat, longer in days because the machine works the cells people never reached. The frontier is rented 78,869 times, 61 percent of them on classes worth $9k–$20k and under one percent on the five worth the most.
+- **Exposure.** The uncapped machine holds $96M of unattended decisions in flight at peak; under a $50M cap half the decision mass licenses, under $25M none does in a year. The licence follows the exposure cap.
 - **Kappa.** 0.110: 2.3M minutes of review caused against 21.3M minutes of person-work removed, the denominator metered from the firm's own rows per decided cell rather than priced by the plant's formula (which read 0.242).
 - **The residual.** Warrant 4.6, counterparty 0.7, frame 10.0 (of which 6.8 waits on the ladder and 3.2 on instrumentation), thin tape 21.1 percent. The first two do not move when models improve.
 - **The multiverse** (last run at v1). Ten structural patches, six rollouts each. The three that buy a lane, moving a class's unrecorded determinants into a system of record, take the top three places every time. With the queue priced, acting sooner beats acting later; with it free, the reverse.
@@ -63,7 +65,7 @@ Four findings are recorded and not fixed: the novelty score has no variance once
 | `--multiverse [--futures 64]` | policy search over structure: many ACMEs under edited constraints, writ-reweighted with ensemble pessimism; every patch carries an inverse | 35 min |
 | `--selftest [--lie N]` | the oracle battery; `--lie N` corrupts the mechanism oracle N tests and that oracle must be seen to catch it | 80 s |
 
-Common flags: `--n 500 --span 7 --demand 1.5 --seed 20260913`; `--budget N` the read budget; `--judge plant|null|rules`; `--tape DIR` writes the durable tape with a checkpoint every `--ckpt-every K` periods, `--resume` continues from its newest valid checkpoint, `--dump DIR` writes the observer's files; `--switch off|shadow|live|stop` and `--switch-file PATH` (read by the port every period, a change is a NOTE row), `--pill PATH` the heartbeat `tools/pill.py` reads.
+Common flags: `--n 500 --span 7 --demand 1.5 --seed 20260913`; `--budget N` the read budget; `--judge plant|null|rules`; `--tape DIR` writes the durable tape with a checkpoint every `--ckpt-every K` periods, `--resume` continues from its newest valid checkpoint, `--dump DIR` writes the observer's files; `--switch off|shadow|live|stop` and `--switch-file PATH` (read by the port every period, a change is a NOTE row), `--pill PATH` the heartbeat `tools/pill.py` reads; `--shared [--flip-rate R]` a shared fact per class that moves, `--check-shared` re-reads every certificate carry, `--unresolved R` a world that sometimes never answers, `--exposure-cap V` the writ's cap on outstanding exposure in dollars.
 
 ## The oracle battery
 
@@ -85,7 +87,9 @@ Every oracle carries a lie. Under `--lie N` the mechanism oracle N claims to tes
 | O30 | every EFFECT re-derives from rows: proposal, stratum, folded rung, schema, switch, the gate's own inputs | PASS, 48000 effects re-derived through the gate: 48000 agree, 0 mismatched, 0 band mismatches, 0 without a proposal |
 | O19 | off is invisible: no effect, and the incumbent's rows equal a run with no machine | PASS, 0 effects under off; 288051 incumbent rows against 288051 with no machine, byte-identical |
 | O25 | the same rows at different wall spacing give identical verdicts: the machine reads the day, never the clock | PASS, 402660 rows against 402660; 70 TICK rows carry a different wall value; every other byte identical |
-| O2 | the gate never authorises outside its licence | PASS, 8640 lattice points, 390 reached ACT; pressure never widened; off held every point |
+| O37 | the shared fact: a proposal is carried across a change only on the judge's certificate, re-derivable from rows, and read again where a margin crosses | PASS, 33 changes of a shared fact; 515 frames moved by it: 324 carried by the certificate, all 324 re-derived from rows, 324 checked against the judge with 0 disagreements; 191 read again, of which 31 changed choice and 180 changed band |
+| O38 | outstanding exposure never exceeds the writ's cap, an unanswered cell is closed only by a write-off row, and a write-off is evidence for nothing | PASS, cap $300k; the fold's outstanding peaked at $300k, 0 rows over the cap; 10846 acts held for exposure; 491 write-offs, each a row; the ladder counted 37 wager outcomes against 37 answered; the live ledger's outstanding equals the fold's |
+| O2 | the gate never authorises outside its licence | PASS, 8640 lattice points, 390 reached ACT; pressure never widened; off held every point; an exhausted exposure allowance held every act and moved nothing else |
 | O3 | out of supervision degrades to HOLD, never to acting | PASS |
 | O4 | transport conserves: rows ship, columns never exceed | PASS, max column overshoot 0.00e+00, placed+stock err 1.30e-08 |
 | O5 | a binding capacity has a nonzero price, stocks included | PASS, binding seat price 29.6598, unplaced-stock price 28.0206 |
@@ -97,12 +101,12 @@ Every oracle carries a lie. Under `--lie N` the mechanism oracle N claims to tes
 | O11 | effects carry inverses; the window closes at settlement | PASS, 60 effects committed and unwound; post-settlement reversal refused |
 | O12 | the origin-fit cascade promises an impossible company | PASS, alpha 0.145 vs 0.197 planted; F 17.6 vs 9.0; gap at E=200 is 9 seats |
 | O13 | the measured decide fraction ranks the planted intensity | PASS, partial Spearman 0.963 over 24 classes, n_systems controlled; the LEVEL is never recovered |
-| O28 | no dead physics: every free function in firm.h/world.h has a caller | PASS, 18 functions |
+| O28 | no dead physics: every free function in firm.h/world.h has a caller | PASS, 21 functions |
 | O25a | the kernel reads no clock: machine.h, solver.h, ledger.h, report.h, port.h, license.h, tapefile.h, gate.h read time only from TICK rows | PASS |
 | O17 | the machine links without the plant or the governor: ledger.h, port.h, license.h, solver.h, machine.h, report.h compile under -DACME_NO_PLANT -DACME_NO_GOVERNOR | PASS |
-| O30a | the gate is pinned: include/acme/gate.h digests to its pin d1115a674638eba9 | PASS |
+| O30a | the gate is pinned: include/acme/gate.h digests to its pin aa7e850b6bdb032f | PASS |
 
-*Regenerated from `receipts/step-d-2026-09-14/d2/selftest.txt`, `o28_o25a.txt`, `o17.txt` and `o30a.txt` by `tools/oracle_table.py`, never edited by hand. O25a is a source scan (no clock read in the kernel's files); the dynamic O25 (same rows at different wall spacing give identical verdicts) waits for the TICK-driven loop of step D.*
+*Regenerated from `receipts/step-e-2026-09-15/e0/selftest.txt`, `o28_o25a.txt`, `o17.txt` and `o30a.txt` by `tools/oracle_table.py`, never edited by hand. O25a is a source scan (no clock read in the kernel's files); the dynamic O25 (same rows at different wall spacing give identical verdicts) waits for the TICK-driven loop of step D.*
 
 ## How it is built
 

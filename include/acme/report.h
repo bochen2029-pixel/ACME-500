@@ -123,6 +123,7 @@ struct ArmResult {
   long   open_n = 0;
   double total_cost() const { return writ_cost + backlog_cost; }
   long   settled = 0, good = 0, late = 0, bad = 0;
+  long   unresolved = 0;          // E0: written off, never answered; in `settled`, in no rate
   long   breached = 0;
   double human_minutes = 0;
   double decide_minutes = 0;
@@ -145,7 +146,7 @@ inline ArmResult score_arm(const Ledger& L, const Firm& f) {
       continue;
     }
     ++r.settled;
-    switch (o.outcome) { case OK_GOOD: ++r.good; break; case OK_LATE: ++r.late; break; default: ++r.bad; break; }
+    switch (o.outcome) { case OK_GOOD: ++r.good; break; case OK_LATE: ++r.late; break; case OK_UNRESOLVED: ++r.unresolved; break; default: ++r.bad; break; }
     if (o.day_decided > o.day_due) ++r.breached;
     r.writ_cost += outcome_cost(f.writ, cls_spec(o.cls), o.outcome);
     r.cycle_days += (double)(o.day_settled - o.day_open); ++r.n_cycle;
@@ -421,6 +422,26 @@ inline void print_shadow_agreement(const Tape& tape, int NC) {
   std::printf("\n  SHADOW AGREEMENT — %ld shadow effects; on %ld cells a person then decided, the draft agreed %.1f%%\n", shadows, tn, tn ? 100.0 * ta / tn : 0.0);
   std::printf("  %-22s %8s %8s\n", "class", "compared", "agree");
   for (int c = 0; c < NC; ++c) if (n[c]) std::printf("  %-22s %8ld %7.1f%%\n", cls_spec(c).name, n[c], 100.0 * agree[c] / n[c]);
+}
+
+// THE SHARED FACT'S ACCOUNT (E0). One change of a fact shared by a class moves
+// every open frame of the class; the print says how the machine paid for it:
+// carried by the judge's certificate without a read, read again because the
+// sign or the band would cross, and of those how many decisions and bands
+// actually changed; the certificate's disagreement with the judge under the
+// measurement mode; and the exposure ledger.
+inline void print_shared_fact(const MachineStats& st, const Ledger& L, const ArmResult& ar, float exposure_cap) {
+  std::printf("\n  THE SHARED FACT — %llu changes seen by the machine; %llu frames moved by the fact alone\n",
+              (unsigned long long)st.shared_events, (unsigned long long)st.shared_affected);
+  std::printf("    carried by the certificate (sign and band survived, no read)   %llu\n", (unsigned long long)st.incr_updates);
+  std::printf("    read again (the sign or the band would cross, or no certificate)  %llu   of which the choice changed %llu, the band changed %llu\n",
+              (unsigned long long)st.shared_full_reads, (unsigned long long)st.shared_flip_choice, (unsigned long long)st.shared_flip_band);
+  if (st.incr_checked)
+    std::printf("    certificate checked against the judge's own read           %llu   disagreements %llu\n",
+                (unsigned long long)st.incr_checked, (unsigned long long)st.incr_discrepancies);
+  std::printf("  OUTSTANDING EXPOSURE — cap %s; largest at a period's close $%.2fM; at the end $%.2fM; acts held for exposure %llu; written off as unresolved %ld\n",
+              exposure_cap > 0.f ? (std::string("$") + std::to_string((long)(exposure_cap / 1e6)) + "M").c_str() : "none",
+              st.out_max / 1e6, L.outstanding_total / 1e6, (unsigned long long)st.exposure_holds, ar.unresolved);
 }
 
 // THE ROW HISTOGRAM. Rows by type, from which the write share S of §1 becomes

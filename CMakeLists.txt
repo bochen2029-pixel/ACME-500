@@ -44,7 +44,9 @@ set(LIE_LINE_20 "O18")   # lie 20 = O18, a kill survives (a restore that keeps t
 set(LIE_LINE_21 "O30")   # lie 21 = O30, every EFFECT re-derives from rows (an effect whose proposal was never written)
 set(LIE_LINE_22 "O19")   # lie 22 = O19, off is invisible (a resident that lets one cell through under off)
 set(LIE_LINE_23 "O25")   # lie 23 = O25, the same rows at different wall spacing (a resident that reads the clock)
-foreach(N RANGE 0 23)
+set(LIE_LINE_24 "O37")   # lie 24 = O37, the shared fact (the old proposal carried as if the fact had not moved)
+set(LIE_LINE_25 "O38")   # lie 25 = O38, outstanding exposure (one act in a hundred past the cap)
+foreach(N RANGE 0 25)
   add_test(NAME lie_${N} COMMAND acme --selftest --lie ${N})
   set_tests_properties(lie_${N} PROPERTIES
     PASS_REGULAR_EXPRESSION "\\[PASS\\] ${LIE_LINE_${N}} "

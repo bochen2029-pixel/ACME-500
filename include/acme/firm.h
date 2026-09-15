@@ -89,6 +89,14 @@ struct Writ {
   float canary_delta = 0.30f;   // the non-inferiority margin that sets n0
   int   audit_min    = 3;       // a sampled review fraction never reaches zero
   float canary_cap   = 0.35f;   // the most of a class the wager may take in a term
+  // E0: OUTSTANDING EXPOSURE. The value of the machine's unattended effects
+  // (via 1 and 3) whose outcome has not arrived may not exceed this; 0 = no
+  // cap. It bounds risk in flight, which n0 does not: lambda <= cap / (b L).
+  float exposure_cap = 0.f;
+  // E0: the write-off rule. A decided cell the world has not answered after
+  // this many verdict latencies is written off as UNRESOLVED by the world port:
+  // an explicit row, evidence for nothing, its exposure released by that row.
+  int   write_off_terms = 3;
   int   read_budget  = 50000;   // C1: Judge::read calls per period, a dial [BUDGET]: one resident
                                 // card at ~0.6 reads a second over a day-long period. Behind the port a
                                 // read is a forward pass; the field spends them ripest-first on cells
@@ -161,15 +169,18 @@ struct Firm {
 // get summed, not through a curve. What stays here is the outcome vocabulary
 // and the writ's price of an outcome.
 // ----------------------------------------------------------------------------
-enum OutcomeKind : uint8_t { OK_NONE = 0, OK_GOOD, OK_LATE, OK_BAD, OK_N };
+enum OutcomeKind : uint8_t { OK_NONE = 0, OK_GOOD, OK_LATE, OK_BAD,
+                             OK_UNRESOLVED,   // E0: the world never answered; written off by the writ's rule, evidence for nothing
+                             OK_N };
 
 // The writ's cost of a landed outcome. One cost source; both arms are scored
 // with it and nothing else.
 inline double outcome_cost(const Writ& w, const ClassSpec& s, int outcome) {
   switch (outcome) {
-    case OK_BAD:  return w.w_bad  * s.value;
-    case OK_LATE: return w.w_late * s.value;
-    default:      return 0.0;
+    case OK_BAD:        return w.w_bad  * s.value;
+    case OK_LATE:       return w.w_late * s.value;
+    case OK_UNRESOLVED: return w.w_late * s.value;   // E0: an obligation never confirmed discharged is priced as late, never as good
+    default:            return 0.0;
   }
 }
 
