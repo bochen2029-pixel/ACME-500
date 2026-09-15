@@ -612,4 +612,100 @@ enum : uint32_t { JUDGE_RESIDENT_HASH = 0x504C4A32u,    // 'PLJ2': the plant's a
 inline PlantJudge make_resident_judge(const World* w) { return PlantJudge(w, 0x4A55444745ULL /*'JUDGE'*/, JUDGE_RESIDENT_HASH, 0.55f, true); }
 inline PlantJudge make_frontier_judge(const World* w) { return PlantJudge(w, 0x46524F4E54ULL /*'FRONT'*/, JUDGE_FRONTIER_HASH, 0.96f, false); }
 
+// ----------------------------------------------------------------------------
+// E3: THE BOUNDARY JUDGE — O31's instrument.
+//
+// The ladder's false-promotion rate is the probability that a band whose judge
+// is NO BETTER than the null promotes anyway. Measuring it needs a judge that
+// sits exactly on the null's boundary, and only the plant can build one,
+// because only the plant knows the truth. This judge's DIRECTION is the plant's
+// arithmetic at a fixed competence, so its bands are populated like a real
+// judge's; its CHOICE is the truth with a probability chosen so that its good
+// rate lands on a target per class-band: the incumbent's own rate in the band
+// as the ladder's plug-in reads it (`at bar`, the null of the rule as built),
+// or the rate a delta worse on the failure side, g0 = 1 - (1 - gbar)(1 + delta)
+// (`at g0`, the null the ladder v2 tests). A cell already past its due day
+// cannot be good whatever is chosen, so the coin is spent on on-time reads only,
+// scaled by the running late share of the band, and the achieved rate is
+// printed beside the target so the distance is a reading.
+//
+// It reads the plant's ledger for the incumbent's rates and the due day: it is
+// the plant's judge, never the kernel's. `shift` lifts the target: the lie a
+// judge above the boundary tells under the boundary judge's name (O31's lie).
+// ----------------------------------------------------------------------------
+enum BoundaryAt { BJ_AT_BAR = 0, BJ_AT_G0 = 1 };
+enum : uint32_t { JUDGE_BOUNDARY_HASH = 0x504C4231u };   // 'PLB1'
+struct BoundaryJudge : Judge {
+  const World* w; const Ledger* L; const Writ* wr;
+  int   at;
+  float delta, comp, shift;
+  uint64_t key = 0x424F554E44ULL;                      // 'BOUND': its own key, never the world's
+  std::vector<long>   reads, late_reads;               // [cls*NBAND+b], reads and reads already past due (a reading, not an input)
+  std::vector<double> target, gbar, late_act;          // [cls*NBAND+b], refreshed once a day from the ledger
+  std::vector<double> used_sum; std::vector<long> used_n;   // [cls*NBAND+b] the target as used when a coin was spent, so the reading is fair
+  uint32_t target_day = 0xFFFFFFFFu;
+  BoundaryJudge(const World* world, const Ledger* ledger, const Writ* writ, int at_, float delta_, float comp_, float shift_)
+    : w(world), L(ledger), wr(writ), at(at_), delta(delta_), comp(comp_), shift(shift_),
+      reads((size_t)world->NC * NBAND, 0), late_reads((size_t)world->NC * NBAND, 0),
+      target((size_t)world->NC * NBAND, 0.72), gbar((size_t)world->NC * NBAND, 0.72), late_act((size_t)world->NC * NBAND, 0.0),
+      used_sum((size_t)world->NC * NBAND, 0.0), used_n((size_t)world->NC * NBAND, 0) {}
+  double target_used(size_t k) const { return used_n[k] ? used_sum[k] / (double)used_n[k] : target[k]; }
+  // Once a day, from the ledger: the incumbent's good rate per class-band,
+  // folded from the settled human cells exactly as the ladder's plug-in reads
+  // it (license.h: the rate past twelve outcomes, 0.72 before); and the late
+  // share of the WAGER's own acts per band (via 1 and 3, decided past their due
+  // day), which is the share of the judge's acted cells that cannot be good
+  // whatever it chose, so that the coin on the on-time reads lands the band's
+  // good rate on the target. The first estimate of that share, over first
+  // reads, was dominated by the warm backlog and clipped the coin to certainty
+  // for weeks while the fresh arrivals were on time: nine points above target.
+  void refresh() {
+    if (target_day == L->day) return;
+    target_day = L->day;
+    std::vector<long> n((size_t)w->NC * NBAND, 0), g((size_t)w->NC * NBAND, 0);
+    std::vector<long> an((size_t)w->NC * NBAND, 0), al((size_t)w->NC * NBAND, 0);
+    for (const Obligation& o : L->ob) {
+      if (o.cls >= w->NC) continue;
+      const size_t k = (size_t)o.cls * NBAND + (o.band < NBAND ? o.band : NBAND - 1);
+      if (o.by_machine && (o.via == 1 || o.via == 3) && (o.state == OB_DECIDED || o.state == OB_SETTLED)) {
+        ++an[k]; if (o.day_decided > o.day_due) ++al[k];
+      }
+      if (o.state != OB_SETTLED || o.by_machine || o.outcome == OK_UNRESOLVED) continue;
+      ++n[k]; if (o.outcome == OK_GOOD) ++g[k];
+    }
+    for (size_t k = 0; k < n.size(); ++k) {
+      const double p = (n[k] >= 12) ? (double)g[k] / (double)n[k] : 0.72;
+      gbar[k] = p;
+      const double t = (at == BJ_AT_G0) ? 1.0 - (1.0 - p) * (1.0 + (double)delta) : p;
+      target[k] = std::min(0.98, std::max(0.02, t + (double)shift));
+      late_act[k] = an[k] ? (double)al[k] / (double)an[k] : 0.0;
+    }
+  }
+  Proposal read(const Frame& f) override {
+    refresh();
+    const Gathered gth = gather(*w, f.oid, f.cls, f.systems_mask, f.boundary, 0.f, f.shared_epoch);
+    const float signal = gth.signal + judgement_noise_sd(f.cls, comp) * unrm(key, 5200, f.oid);
+    const float direction = 4.0f * signal * (0.35f + 0.65f * f.coverage_hat);
+    const int b = band_of(direction, *wr);
+    const size_t k = (size_t)f.cls * NBAND + b;
+    Obligation o{}; o.id = f.oid; o.cls = (uint16_t)f.cls;
+    const int truth = full_signal(*w, o, f.shared_epoch) > 0.f ? 1 : 0;
+    const Obligation* cell = L->at_oid(f.oid);
+    const bool late = cell && L->day > cell->day_due;
+    ++reads[k]; if (late) ++late_reads[k];
+    bool correct = true;                                              // a late read cannot be good; the coin is not spent on it
+    if (!late) {
+      const double pc = std::min(1.0, target[k] / std::max(0.05, 1.0 - late_act[k]));
+      correct = u01(key, 7300 + f.cls, f.oid) < (float)pc;
+      used_sum[k] += target[k]; used_n[k] += 1;                      // the target as it stood when the coin was spent
+    }
+    Proposal p; p.choice = correct ? truth : 1 - truth;
+    p.signal = std::fabs(signal) * (p.choice ? 1.f : -1.f);   // the magnitude is the read's; the sign is the choice's
+    p.completeness_hat = f.coverage_hat; p.judge_hash = JUDGE_BOUNDARY_HASH;
+    return p;
+  }
+  bool act_coin(int cls, uint32_t oid, float p) override { return u01(key, 7200 + cls, oid) < p; }
+  uint32_t hash() const override { return JUDGE_BOUNDARY_HASH; }
+};
+
 } // namespace acme

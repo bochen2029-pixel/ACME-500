@@ -36,12 +36,18 @@ echo "selftest exit $?  $(tail -1 "$OUT/selftest.txt")  $(cat "$OUT/selftest.tim
 grep "FAIL" "$OUT/selftest.txt"
 MAXLIE=$(sed -n 's/.*foreach(N RANGE 0 \([0-9][0-9]*\)).*/\1/p' CMakeLists.txt | head -1)
 if [ -z "$MAXLIE" ]; then echo "could not read the lie range from CMakeLists.txt"; exit 2; fi
-echo "lie arms 0..$MAXLIE"
+# E3: the lie arms run LIE_JOBS at a time (default 6 of the box's 16 threads); each
+# arm is its own process with its own temp files (O18 keys its directory on the
+# lie), so the arms are independent, and each writes its exit code beside its
+# output so the summary below reads it back in order.
+LIE_JOBS=${LIE_JOBS:-6}
+echo "lie arms 0..$MAXLIE, $LIE_JOBS at a time"
+seq 0 "$MAXLIE" | xargs -P "$LIE_JOBS" -I{} sh -c './acme --selftest --lie {} > "$0/lie-{}.txt" 2>&1; echo $? > "$0/lie-{}.exit"' "$OUT"
 for n in $(seq 0 "$MAXLIE"); do
   L=$(grep -o "set(LIE_LINE_$n \"[A-Za-z0-9]*\")" CMakeLists.txt | sed "s/.*\"\(.*\)\".*/\1/")
-  ./acme --selftest --lie "$n" > "$OUT/lie-$n.txt" 2>&1
-  echo "lie $n exit $?  lied-to $L PASS lines: $(grep -c "\[PASS\] $L " "$OUT/lie-$n.txt")  FAIL lines: $(grep -c '\[FAIL\]' "$OUT/lie-$n.txt")"
+  echo "lie $n exit $(cat "$OUT/lie-$n.exit")  lied-to $L PASS lines: $(grep -c "\[PASS\] $L " "$OUT/lie-$n.txt")  FAIL lines: $(grep -c '\[FAIL\]' "$OUT/lie-$n.txt")"
 done
+rm -f "$OUT"/lie-*.exit
 python3 tools/o17.py . g++ > "$OUT/o17.txt" 2>&1; echo "o17 exit $?"
 { python3 tools/dead_symbols.py . ; python3 tools/dead_symbols.py . --lie ; python3 tools/dead_symbols.py . --o25 ; python3 tools/dead_symbols.py . --o25 --lie ; } > "$OUT/o28_o25a.txt" 2>&1; echo "o28/o25a exit $?"
 { python3 tools/gate_hash.py . ; python3 tools/gate_hash.py . --lie ; } > "$OUT/o30a.txt" 2>&1; echo "o30a exit $?"

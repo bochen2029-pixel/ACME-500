@@ -66,6 +66,11 @@ struct Args {
   float unresolved = 0.f;        // --unresolved R: the share of decided cells the world never answers   [E0]
   float exposure_cap = 0.f;      // --exposure-cap V: the writ's cap on outstanding exposure, in dollars; 0 = none   [E0]
   bool  check_shared = false;    // --check-shared: re-read every certificate carry against the judge and count disagreements   [E0]
+  int   o31_seeds = 3;           // --seeds S: how many seeded firms the false-promotion rate is counted over   [E3]
+  const char* o31_at = "g0";     // --at bar|g0: the boundary the judge sits on (the rule as built's null, or the delta-worse null)   [E3]
+  float o31_shift = 0.f;         // --shift X: lift the boundary judge's target (the lie's dial; 0 = the boundary)   [E3]
+  float judge_comp = -1.f;       // --judge-comp X: a plant judge at a FIXED competence X behind the port (the stub sweep, F-STUB)   [E3]
+  bool  test_admit = false;      // --o31's: every band past the thin band admitted to rung 1 as a test, so the wager runs everywhere   [E3]
 };
 static Args parse(int argc, char** argv) {
   Args a;
@@ -74,7 +79,11 @@ static Args parse(int argc, char** argv) {
     auto next_i = [&](int d) { return (i + 1 < argc) ? atoi(argv[++i]) : d; };
     auto next_f = [&](float d) { return (i + 1 < argc) ? (float)atof(argv[++i]) : d; };
     if (!strncmp(s, "--sim", 5) || !strncmp(s, "--twin", 6) || !strncmp(s, "--automate", 10)
-     || !strncmp(s, "--multiverse", 12) || !strncmp(s, "--selftest", 10)) a.mode = s;
+     || !strncmp(s, "--multiverse", 12) || !strncmp(s, "--selftest", 10) || !strcmp(s, "--o31")) a.mode = s;
+    else if (!strcmp(s, "--seeds")) a.o31_seeds = next_i(3);
+    else if (!strcmp(s, "--at")) a.o31_at = (i + 1 < argc) ? argv[++i] : "g0";
+    else if (!strcmp(s, "--shift")) a.o31_shift = next_f(0.f);
+    else if (!strcmp(s, "--judge-comp")) a.judge_comp = next_f(-1.f);
     else if (!strcmp(s, "--days")) a.days = next_i(260);
     else if (!strcmp(s, "--warm")) a.warm = next_i(180);
     else if (!strcmp(s, "--futures")) a.futures = next_i(64);
@@ -229,9 +238,12 @@ struct MachineRun {
   int ckpt_every = 0; std::string tape_dir;
   MachineRun(const Args& a_, Run& r, int warm_, int total_) : a(a_), R(r), warm(warm_), total(total_), store(&r.w) {}
 
-  void make_judges(Judge* judge_override) {
+  Judge* frontier_judge = nullptr;              // E3: the rented mind behind the port, overridable (O31 stands the boundary judge there too)
+  void make_judges(Judge* judge_override, Judge* frontier_override = nullptr) {
     resident_judge.reset(new PlantJudge(make_resident_judge(&R.w)));
+    if (a.judge_comp >= 0.f) resident_judge.reset(new PlantJudge(&R.w, 0x4A55444745ULL, JUDGE_RESIDENT_HASH, a.judge_comp, false));   // E3: the stub at a fixed competence (F-STUB)
     frontier.reset(new PlantJudge(make_frontier_judge(&R.w)));
+    frontier_judge = frontier_override ? frontier_override : (Judge*)frontier.get();
     judge = judge_override ? judge_override
           : !strcmp(a.judge, "null") ? (Judge*)&null_judge : !strcmp(a.judge, "rules") ? (Judge*)&rules_judge : (Judge*)resident_judge.get();
   }
@@ -266,12 +278,12 @@ struct MachineRun {
       tick_fold(R.tape, R.L, (uint32_t)d, wall_for(a, d));                           // the clock is a row; the ledger's day moves
       read_switch_file((uint32_t)d);                                                 // D2: the switch, as a row
       gov.draw_strata(R.L, R.tape);                                                  // the governor draws first
-      res.period(R.L, R.f, R.tape, store, *judge, *frontier, gov.lad);               // the resident goes next: it never sleeps
+      res.period(R.L, R.f, R.tape, store, *judge, *frontier_judge, gov.lad);         // the resident goes next: it never sleeps
       human_day(R.w, R.L, R.f, R.tape, R.hs, rep, (uint32_t)d);
       const size_t settled_from = R.tape.size();
       world_settle(R.w, R.L, R.f, R.tape, (uint32_t)d);
       gov.grade(R.tape, settled_from);                                               // the governor folds the day's OUTCOME rows
-      res.grade(R.L, *judge, *frontier);                                             // the field learns; the judges are told
+      res.grade(R.L, *judge, *frontier_judge);                                       // the field learns; the judges are told
       gov.step(R.L.day, res.sup, R.tape);                                            // the ladder moves, as rows
       ++periods;
       dump_snapshot(R.tape, R.L, R.f, (uint32_t)d, &gov.lad, &res.st);
@@ -294,7 +306,7 @@ struct MachineRun {
 // The whole programme from the start: the warm history, the compile step, the
 // judges, the governor, the replay, the admission, then the live loop.
 static AutoOut run_machine(const Args& a, Run& R, int warm_days, int total_days, bool verbose,
-                           Judge* judge_override = nullptr) {
+                           Judge* judge_override = nullptr, Judge* frontier_override = nullptr) {
   MachineRun M(a, R, warm_days, total_days);
   if (a.budget > 0) R.f.writ.read_budget = a.budget;
   if (a.tape) {                                             // D1: the durable tape sees every row from the header on
@@ -309,7 +321,7 @@ static AutoOut run_machine(const Args& a, Run& R, int warm_days, int total_days,
 
   // ---- PHASE 2: the resident, compiled, not yet acting; the judges behind the
   // port; the governor with the salt and the empty licence table keyed to the judge
-  M.make_judges(judge_override);
+  M.make_judges(judge_override, frontier_override);
   M.res.init(R.w.NC, R.f.size(), M.C, R.f.writ, a.seed);
   M.gov.init(R.w.NC, R.f.writ, M.C.arrivals_per_day, alphabet_hash(), M.judge->hash(), M.C.template_hash);
   M.gov.lie_band_dependent = (a.lie == 19);
@@ -327,6 +339,7 @@ static AutoOut run_machine(const Args& a, Run& R, int warm_days, int total_days,
   for (int c = 0; c < R.w.NC; ++c) M.C.coverage[c] = M.RP.coverage[c];
   M.res.C.coverage = M.C.coverage;                          // the resident reads with the measured coverage from here on
   M.hist_licensed = M.gov.license_from_history(M.RP, (uint32_t)warm_days, R.tape);
+  if (a.test_admit) M.gov.admit_all_for_test((uint32_t)warm_days, R.tape);   // E3: O31's harness; never outside --o31
 
   // ---- PHASE 4+: live. Both the remaining humans and the resident, on one world.
   t0 = now_s();
@@ -710,6 +723,61 @@ static int cmd_multiverse(const Args& a) {
   std::printf("  Every one of these is a structural patch with an inverse. A patch is DEPLOYED\n"
               "  with its forecast attached, and if the arrived quarter misses the forecast it\n"
               "  unwinds. A search result is not a licence; it is a proposal with a receipt.\n");
+  return 0;
+}
+
+// ----------------------------------------------------------------------------
+// E3 · O31 AS A MODE — THE LADDER'S FALSE-PROMOTION RATE UNDER A BOUNDARY JUDGE
+//
+// The one number F23 asks for and the rule as built never had: put a judge that
+// is exactly as good as the null on every band, admit every band to the wager,
+// run the year, and count the bands that promoted anyway. The judge is the
+// plant's (world.h, BoundaryJudge): it sits on the boundary the flag names, at
+// the incumbent's own rate (`--at bar`, the null of the rule as built) or a
+// delta worse (`--at g0`, the null of the ladder v2). `--shift X` lifts the
+// target above the boundary: with a judge genuinely better than the null the
+// promotions are true positives, which is how the mode is seen to discriminate.
+// The rate is printed with its Wilson interval against the ladder's alpha, and
+// the achieved good rate per band beside its target, so the distance from the
+// boundary is a reading and not an assumption.
+// ----------------------------------------------------------------------------
+static int cmd_o31(const Args& a) {
+  rule("O31 · THE LADDER'S FALSE-PROMOTION RATE UNDER A BOUNDARY JUDGE");
+  const int at = !strcmp(a.o31_at, "bar") ? BJ_AT_BAR : BJ_AT_G0;
+  std::printf("  %d seeded firms of %d seats, warm %d, %d days; every band past the thin band admitted to rung 1 as a test;\n"
+              "  the judge %s%s; alpha_promote %.4f; the ladder as %s.\n",
+              a.o31_seeds, a.n, a.warm, a.days,
+              at == BJ_AT_BAR ? "at the incumbent's own rate in the band (the plug-in the rule reads)" : "a delta worse than the incumbent on the failure side, g0 = 1 - (1 - gbar)(1 + delta)",
+              a.o31_shift != 0.f ? " plus a shift (a judge off the boundary: the lie's dial)" : "", 1.0 / 20.0, "built");
+  long trials = 0, promoted = 0, outcomes = 0; double ach_sum = 0, tgt_sum = 0, end_sum = 0; int bars_measured = 0;
+  std::printf("\n  %5s %7s %9s %10s %9s %9s %9s %8s\n", "seed", "bands", "promoted", "outcomes", "achieved", "target", "at end", "measured");
+  for (int s = 0; s < a.o31_seeds; ++s) {
+    const uint64_t seed = a.seed ^ (0x9E3779B9ULL * (uint64_t)(s + 1));
+    Run R; R.f = build_acme(a.n, a.span, seed); R.w = world_of(a, seed); R.w.demand_scale = a.demand; R.f.writ.exposure_cap = a.exposure_cap;
+    Args aa = a; aa.seed = seed; aa.test_admit = true; aa.lie = -1;
+    BoundaryJudge bj(&R.w, &R.L, &R.f.writ, at, R.f.writ.canary_delta, 0.75f, a.o31_shift);
+    const AutoOut o = run_machine(aa, R, a.warm, a.days, false, &bj, &bj);
+    long t = 0, p = 0, n = 0; double ach = 0, tgt = 0, endt = 0; int meas = 0;
+    for (int c = 0; c < R.w.NC; ++c) for (int b = 1; b < NBAND; ++b) {
+      const Lic& L = o.lad.at(c, b);
+      if (L.n_machine < 1) continue;
+      ++t; n += L.n_machine; if (L.rung >= 2) ++p;
+      ach += (double)L.good_machine / (double)L.n_machine; tgt += bj.target_used((size_t)c * NBAND + b); endt += bj.target[(size_t)c * NBAND + b];
+      if (L.n_incumbent >= 12) ++meas;
+    }
+    std::printf("  %5d %7ld %9ld %10ld %9.3f %9.3f %9.3f %8d\n", s, t, p, n, t ? ach / t : 0.0, t ? tgt / t : 0.0, t ? endt / t : 0.0, meas);
+    trials += t; promoted += p; outcomes += n; ach_sum += ach; tgt_sum += tgt; end_sum += endt; bars_measured += meas;
+  }
+  const double rate = trials ? (double)promoted / (double)trials : 0.0;
+  const double z = 1.96, nn = (double)std::max(1L, trials);
+  const double centre = (rate + z * z / (2 * nn)) / (1 + z * z / nn);
+  const double half = z * std::sqrt(rate * (1 - rate) / nn + z * z / (4 * nn * nn)) / (1 + z * z / nn);
+  std::printf("\n  bands run %ld, promoted past the test rung %ld: rate %.4f (Wilson 95%% %.4f to %.4f) against alpha %.4f\n",
+              trials, promoted, rate, std::max(0.0, centre - half), std::min(1.0, centre + half), 1.0 / 20.0);
+  std::printf("  wager outcomes %ld; the judge's achieved good rate %.3f against the target as used at the coin %.3f (at the end %.3f; means over bands); the bar measured on %d of %ld bands\n",
+              outcomes, trials ? ach_sum / trials : 0.0, trials ? tgt_sum / trials : 0.0, trials ? end_sum / trials : 0.0, bars_measured, trials);
+  std::printf("  %s\n", (centre - half) > 1.0 / 20.0 ? "THE RATE IS ABOVE ALPHA: the rule promotes a judge no better than its null more often than it says (F23)."
+                                                     : "the rate is not shown above alpha at this sample.");
   return 0;
 }
 
@@ -1460,5 +1528,6 @@ int main(int argc, char** argv) {
   if (!strcmp(a.mode, "--twin"))       return cmd_twin(a);
   if (!strcmp(a.mode, "--automate"))   return cmd_automate(a);
   if (!strcmp(a.mode, "--multiverse")) return cmd_multiverse(a);
+  if (!strcmp(a.mode, "--o31"))        return cmd_o31(a);
   return cmd_selftest(a);
 }

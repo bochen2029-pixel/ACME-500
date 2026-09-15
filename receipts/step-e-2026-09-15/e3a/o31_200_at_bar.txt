@@ -1,0 +1,13 @@
+
+=== O31 · THE LADDER'S FALSE-PROMOTION RATE UNDER A BOUNDARY JUDGE ===
+  3 seeded firms of 200 seats, warm 40, 130 days; every band past the thin band admitted to rung 1 as a test;
+  the judge at the incumbent's own rate in the band (the plug-in the rule reads); alpha_promote 0.0500; the ladder as built.
+
+   seed   bands  promoted   outcomes  achieved    target    at end measured
+      0      37         6      12010     0.449     0.468     0.499       35
+      1      38         7      12470     0.480     0.454     0.497       36
+      2      38         7      13543     0.479     0.494     0.505       34
+
+  bands run 113, promoted past the test rung 20: rate 0.1770 (Wilson 95% 0.1176 to 0.2576) against alpha 0.0500
+  wager outcomes 38023; the judge's achieved good rate 0.470 against the target as used at the coin 0.472 (at the end 0.501; means over bands); the bar measured on 105 of 113 bands
+  THE RATE IS ABOVE ALPHA: the rule promotes a judge no better than its null more often than it says (F23).

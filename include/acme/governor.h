@@ -136,6 +136,21 @@ struct Governor {
     }
   }
 
+  // E3 (O31's harness): every band past the thin band admitted to rung 1 as a
+  // TEST admission, so the wager runs on every class at once and the
+  // false-promotion rate can be counted over all of them. The LICENSE row
+  // carries the admission kind in its via byte (5 = test). Never outside --o31.
+  int admit_all_for_test(uint32_t day, Tape& tape) {
+    int n = 0;
+    for (int c = 0; c < lad.NC; ++c) for (int b = 1; b < NBAND; ++b) {
+      Lic& L = lad.at(c, b);
+      if (L.rung >= 1) continue;
+      L.rung = 1; ++n;
+      tape.put(R_LICENSE, day, 0, c, -3, ARM_GOVERNOR, L.rung, b, 0.f, 0.f, b, 0, 5);
+    }
+    return n;
+  }
+
   // Licence the agreement bands from history: the band is admitted to unattended
   // action where the resident's coinciding choice beat the firm's own baseline on
   // arrived outcomes, with both sides above the sample floor, AND the judge's
