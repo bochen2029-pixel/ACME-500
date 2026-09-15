@@ -220,7 +220,7 @@ struct ReplayOut {
 // Re-decide every settled obligation the firm already handled, through the gate,
 // at rung 1, and grade on the four-cell table. Only the diagonal is complete.
 inline ReplayOut replay(const Ledger& L, const Firm& f, Field& fd, const Compiled& C,
-                        Ladder& lad, const Writ& wr, const Store& store, Judge& judge) {
+                        Ladder& lad, const Writ& wr, const Store& store, Judge& judge, Calib* cal = nullptr) {
   (void)f; (void)fd;
   ReplayOut R; R.init(L.NC);
   for (const Obligation& o : L.ob) {
@@ -251,6 +251,9 @@ inline ReplayOut replay(const Ledger& L, const Firm& f, Field& fd, const Compile
       const int b = band_of(z, wr);
       Lic& Lc = lad.at(c, b);
       ++Lc.n_replayed; ++Lc.n_agree; ++Lc.agree_total; Lc.agree_good += good ? 1 : 0;
+      // E3c: the history half of the calibration curve: the machine's choice was
+      // executed (by the firm), so the arrival grades the machine's confidence
+      if (cal) cal->push(c, std::fabs(z), o.outcome == OK_BAD);
     } else {
       ++R.disagree[c];
       if (good) ++R.disagree_firm_good[c]; else ++R.disagree_firm_bad[c];
@@ -353,18 +356,41 @@ struct Resident {
   bool    lie_effect_under_off = false;  // O19's lie: a resident that lets one cell through with the switch off. Never set outside the battery.
   bool    lie_silent_proposal = false;   // O30's lie: a proposal folded into the memo without its row. Never set outside the battery.
   bool    lie_stratum_off = false;       // O20's lie: a resident that acts on retained cells of the wide band. Never set outside the battery.
+  bool    lie_calib_blind = false;       // O47's lie: a resident that admits a class whose curve is not monotone. Never set outside the battery.
+  // E3c: THE CALIBRATION. The counts the curve is measured from (the replay's
+  // agreement cases, then every live outcome on a cell whose executed choice
+  // was the last proposal's), frozen per term into CALIB rows; the gate reads
+  // the frozen curve back from the ledger's fold of those rows, never from here.
+  Calib   calib;
+  std::vector<float>   cal_dir;          // [oid] |direction| of the cell's last proposal (the live half of the curve)
+  std::vector<int8_t>  cal_choice;       // [oid] the last proposal's choice, -1 none
+  std::vector<int8_t>  cal_human;        // [oid] the person's decision on the cell, -1 none
 
   // C1: the resident is told the class count and the seat count, holds the
   // compile step's output and the writ (which no longer carries the salt), and
   // never a World, a ladder or a salt.
   void init(int nc, int ns, const Compiled& comp, const Writ& writ, uint64_t seed) {
     NC = nc; NS = ns; C = comp; wr = writ;
-    fd.init(NC, NS, seed); st.init(NC); sup.init(NC);
+    fd.init(NC, NS, seed); st.init(NC); sup.init(NC); calib.init(NC);
   }
 
   // D0: the machine reads its day from the ledger, where the TICK row put it.
   void period(Ledger& L, Firm& f, Tape& tape, const Store& store, Judge& judge, Judge& frontier, const Ladder& lic);
   void grade(Ledger& L, Judge& judge, Judge& frontier);
+  // E3c: the live half of the curve, folded from the day's rows (PROPOSAL, DECIDE, OUTCOME)
+  void calib_ingest(const Tape& tape, size_t from_row);
+  // E3c: the term opens: freeze the curve and write it as CALIB rows, one per
+  // class per bin, folded into the ledger as they are written so the gate reads
+  // the same curve a cold fold reads (O14): the fit on margin, the raw rate on
+  // value, the count on b, measured on via, monotone on band
+  void calib_open_term(Ledger& L, Tape& tape, uint32_t day) {
+    calib.freeze(wr.m_calib);
+    for (int c = 0; c < NC; ++c) for (int b = 0; b < CALIB_NBIN; ++b) {
+      const size_t k = (size_t)c * CALIB_NBIN + b;
+      put_fold(tape, L, R_CALIB, day, 0, c, -1, ARM_MACHINE, b, (int)std::min<long>(calib.n[k], 0x7fffffff),
+               calib.fit[k], calib.raw[k], (uint8_t)calib.monotone[c], 0, calib.measured[c] ? 1 : 0, PROV_M);
+    }
+  }
 };
 
 // One period of the resident. The whole thing is a solve, a read budget, a gate
@@ -579,6 +605,10 @@ inline void Resident::period(Ledger& L, Firm& f, Tape& tape, const Store& store,
     g.sw = L.sw;
     g.value = sp.value;                                           // E0: what an unattended act would put in flight
     g.exposure_left = (wr.exposure_cap > 0.f) ? (float)((double)wr.exposure_cap - L.outstanding_total) : 1e30f;
+    // E3c: the calibrated wrong-rate and the key's admissibility, from the ledger's fold of this term's CALIB rows
+    g.calib_measured = L.calib_measured_of(c) && L.calib_monotone_of(c);
+    g.calib_wrong = L.calib_wrong_of(c, std::fabs(direction));
+    if (lie_calib_blind && L.calib_measured_of(c)) g.calib_measured = true;   // THE LIE (O47): a non-monotone curve admitted
     if (lie_ignore_cap && (o.id % 100u) == 7u) g.exposure_left = 1e30f;   // THE LIE (O38)
     if (lie_effect_under_off && L.sw == SW_OFF && (i % 500) == 7) g.sw = SW_LIVE;   // THE LIE (O19)
 
@@ -666,6 +696,27 @@ inline void Resident::period(Ledger& L, Firm& f, Tape& tape, const Store& store,
 // Outcomes arrive. The field learns from them; the judge is told about the cells
 // it decided. Nothing here widens a licence: that is the governor's fold of the
 // same OUTCOME rows.
+// E3c: THE LIVE HALF OF THE CALIBRATION CURVE, from the day's rows. A PROPOSAL
+// row names the last proposal's choice and direction; a DECIDE row names the
+// person's decision; an OUTCOME row on a cell whose executed choice was the
+// last proposal's grades the machine's confidence: via 1 (the wager), 2 (a
+// person keyed the draft), 4 (a signer executed it), or via 0 where the person
+// chose what the proposal said. The frontier's own choice (via 3) grades the
+// frontier, not this judge, and is left out.
+inline void Resident::calib_ingest(const Tape& tape, size_t from_row) {
+  for (size_t i = from_row; i < tape.rec.size(); ++i) {
+    const Rec& r = tape.rec[i];
+    if (r.oid == 0) continue;
+    if (r.oid >= cal_dir.size()) { const size_t n = (size_t)r.oid + 1024; cal_dir.resize(n, 0.f); cal_choice.resize(n, -1); cal_human.resize(n, -1); }
+    if (r.type == R_PROPOSAL && r.prov == PROV_M) { cal_dir[r.oid] = std::fabs(r.margin); cal_choice[r.oid] = (int8_t)r.a; }
+    else if (r.type == R_DECIDE) { cal_human[r.oid] = (int8_t)r.a; }
+    else if (r.type == R_OUTCOME && r.a != OK_UNRESOLVED && r.cls < NC && cal_choice[r.oid] >= 0) {
+      const bool executed_machine_choice = (r.via == 1 || r.via == 2 || r.via == 4) || (r.via == 0 && cal_human[r.oid] == cal_choice[r.oid]);
+      if (executed_machine_choice) calib.push(r.cls, cal_dir[r.oid], r.a == OK_BAD);
+    }
+  }
+}
+
 inline void Resident::grade(Ledger& L, Judge& judge, Judge& frontier) {
   const uint32_t day = L.day;
   float ftmp[FT_N];

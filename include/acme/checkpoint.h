@@ -60,12 +60,14 @@ inline void ser(Ser& s, const Ledger& L) {
   s.pod(L.mode); s.pod(L.sw); s.pod(L.schema); s.pod(L.ver); s.vec(L.by_class); s.pod(L.total);
   s.vec(L.last_prop); s.vec(L.stratum_kind); s.vec(L.stratum_day); s.vec(L.stratum_rate); s.vec(L.stratum_audit);
   s.vec(L.outstanding); s.pod(L.outstanding_total);
+  s.vec(L.calib_fit); s.vec(L.calib_raw); s.vec(L.calib_n); s.vec(L.calib_measured); s.vec(L.calib_monotone);
 }
 inline void des(Des& d, Ledger& L) {
   d.pod(L.NC); d.vec(L.ob); d.vec(L.idx_of_oid); d.vec(L.open_idx); d.pod(L.next_id); d.pod(L.day);
   d.pod(L.mode); d.pod(L.sw); d.pod(L.schema); d.pod(L.ver); d.vec(L.by_class); d.pod(L.total);
   d.vec(L.last_prop); d.vec(L.stratum_kind); d.vec(L.stratum_day); d.vec(L.stratum_rate); d.vec(L.stratum_audit);
   d.vec(L.outstanding); d.pod(L.outstanding_total);
+  d.vec(L.calib_fit); d.vec(L.calib_raw); d.vec(L.calib_n); d.vec(L.calib_measured); d.vec(L.calib_monotone);
 }
 inline void ser(Ser& s, const HumanStats& h) {
   s.pod(h.time); s.vec(h.by_class); s.pod(h.completeness); s.pod(h.hops); s.pod(h.cycle_days);
@@ -116,15 +118,23 @@ inline void des(Des& d, MachineStats& m) {
   d.vec(m.acted_by_class); d.vec(m.reason_count); d.pod(m.reads); d.pod(m.reads_fresh); d.pod(m.reads_floor); d.pod(m.memo_hits);
   d.pod(m.unread); d.pod(m.budget_bound); d.pod(m.forgone_dual); d.pod(m.total_dual); d.pod(m.periods);
 }
+inline void ser(Ser& s, const Calib& c) {
+  s.pod(c.NC); s.vec(c.n); s.vec(c.bad); s.vec(c.fit); s.vec(c.raw); s.vec(c.measured); s.vec(c.monotone); s.pod(c.terms_frozen);
+}
+inline void des(Des& d, Calib& c) {
+  d.pod(c.NC); d.vec(c.n); d.vec(c.bad); d.vec(c.fit); d.vec(c.raw); d.vec(c.measured); d.vec(c.monotone); d.pod(c.terms_frozen);
+}
 inline void ser(Ser& s, const Resident& r) {
   ser(s, r.fd); ser(s, r.C); s.vec(r.hand.ledger); s.pod(r.hand.n_undone); ser(s, r.st);
   s.pod(r.sup.NC); s.vec(r.sup.cre); s.vec(r.sup.rem); s.pod(r.wr); s.pod(r.adjudication_budget_min);
   s.pod(r.NC); s.pod(r.NS); s.pod(r.lr); s.vec(r.memo_hash); s.vec(r.memo_base); s.vec(r.epoch_seen);
+  ser(s, r.calib); s.vec(r.cal_dir); s.vec(r.cal_choice); s.vec(r.cal_human);
 }
 inline void des(Des& d, Resident& r) {
   des(d, r.fd); des(d, r.C); d.vec(r.hand.ledger); d.pod(r.hand.n_undone); des(d, r.st);
   d.pod(r.sup.NC); d.vec(r.sup.cre); d.vec(r.sup.rem); d.pod(r.wr); d.pod(r.adjudication_budget_min);
   d.pod(r.NC); d.pod(r.NS); d.pod(r.lr); d.vec(r.memo_hash); d.vec(r.memo_base); d.vec(r.epoch_seen);
+  des(d, r.calib); d.vec(r.cal_dir); d.vec(r.cal_choice); d.vec(r.cal_human);
 }
 inline void ser(Ser& s, const Ladder& L) {
   s.pod(L.NC); s.vec(L.lic); s.pod(L.alpha_promote); s.pod(L.alpha_demote); s.pod(L.term_days);

@@ -581,6 +581,7 @@ struct PlantJudge : Judge {
   uint64_t judge_seed;                 // the judge's own key: never the world's seed
   uint32_t id_hash;
   bool     learns;
+  int      invert_class = -1;          // O47's lie: on this class the judge flips its choice where it is most confident (|signal| > 1)
   std::vector<float> comp, comp_n;     // competence per class, and the evidence behind it
   PlantJudge(const World* world, uint64_t seed, uint32_t hash_, float comp0, bool learns_)
     : w(world), judge_seed(seed), id_hash(hash_), learns(learns_), comp(world->NC, comp0), comp_n(world->NC, 0.f) {}
@@ -588,6 +589,7 @@ struct PlantJudge : Judge {
     const Gathered g = gather(*w, f.oid, f.cls, f.systems_mask, f.boundary, 0.f, f.shared_epoch);
     Proposal p;
     p.signal = g.signal + judgement_noise_sd(f.cls, competence(f.cls)) * unrm(judge_seed, 5200, f.oid);
+    if ((int)f.cls == invert_class && std::fabs(p.signal) > 1.0f) p.signal = -p.signal;   // THE LIE (O47): confidently wrong
     p.choice = (p.signal > 0.f) ? 1 : 0;
     p.completeness_hat = f.coverage_hat;                                   // it reports what it was told it holds
     p.judge_hash = id_hash;

@@ -37,6 +37,7 @@ enum Reason : uint8_t {
   RS_SWITCH_OFF,     // D2: the switch is off; the machine decides nothing and says so
   RS_EXPOSURE,       // E0: the outstanding exposure would exceed the writ's cap; an act waits for a verdict to land
   RS_RETAINED,       // E3: the governor drew this cell into the retained stratum: a person decides it, at every rung (F14, O20)
+  RS_UNCALIBRATED,   // E3c: the licence key has no measured monotone curve this term: unmeasured is never safe, it reads rung 0 (O47)
   RS_N
 };
 // THE SWITCH. Read from a file the machine never writes (INTELLECT) or from the
@@ -82,7 +83,7 @@ inline uint32_t alphabet_hash() {
   return (uint32_t)h[0] | ((uint32_t)h[1] << 8) | ((uint32_t)h[2] << 16) | ((uint32_t)h[3] << 24);
 }
 inline const char* reason_name(int r) {
-  static const char* n[] = {"ok","unlicensed","thin-margin","novel-case","irreversible","law","no-adjudication-budget","blocked-by-dep","audit-sample","canary","unsure-placement","unread","switch-off","exposure","retained"};
+  static const char* n[] = {"ok","unlicensed","thin-margin","novel-case","irreversible","law","no-adjudication-budget","blocked-by-dep","audit-sample","canary","unsure-placement","unread","switch-off","exposure","retained","uncalibrated"};
   return n[r % RS_N];
 }
 
@@ -103,6 +104,8 @@ struct GateIn {
   int   sw;              // D2: the switch, folded from the tape; off holds everything
   float value;           // E0: the class value at stake, what an unattended act adds to the outstanding exposure
   float exposure_left;   // E0: the writ's cap less the outstanding exposure; 1e30 when uncapped
+  bool  calib_measured;  // E3c: the key's curve is measured and monotone this term (from CALIB rows); false reads rung 0
+  float calib_wrong;     // E3c: the calibrated wrong-rate at this |direction|, from the frozen curve
 };
 struct GateOut { uint8_t verdict; uint8_t reason; };
 
@@ -116,8 +119,12 @@ inline GateOut gate(const GateIn& g, const Writ& wr) {
   if (g.warrant_reserved)                     return { V_WARRANT,  RS_IRREVERSIBLE };
   if (g.novelty > 0.97f)                      return { V_WARRANT,  RS_NOVEL };  // outside the population the licence was earned on
   if (g.rung <= 0)                            return { V_DRAFT,    RS_UNLICENSED };
+  if (!g.calib_measured)                      return { V_DRAFT,    RS_UNCALIBRATED };   // E3c: no measured monotone curve, no licence
   if (g.in_audit)                             return { V_DRAFT,    RS_AUDIT };
-  if (std::fabs(g.direction) < wr.thin_margin) {
+  // E3c: the thin test reads the calibrated wrong-rate when the writ says so;
+  // the raw direction against the thin margin otherwise
+  const bool thin = (wr.thin_wrong > 0.f) ? (g.calib_wrong > wr.thin_wrong) : (std::fabs(g.direction) < wr.thin_margin);
+  if (thin) {
     if (g.rung >= 2)                          return { V_FRONTIER, RS_THIN };
     return { V_DRAFT, RS_THIN };
   }

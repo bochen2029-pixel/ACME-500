@@ -51,7 +51,8 @@ set(LIE_LINE_27 "O31")   # lie 27 = O31, the false-promotion rate under a bounda
 set(LIE_LINE_28 "O31b")  # lie 28 = O31b, the same under the shared fact (the flip schedule removed under the same name)
 set(LIE_LINE_29 "O45")   # lie 29 = O45, the ladder v2 is a fold (a fold that skips one band's term boundary)
 set(LIE_LINE_30 "O59")   # lie 30 = O59, the regime detector (a detector that never hears)
-foreach(N RANGE 0 30)
+set(LIE_LINE_31 "O47")   # lie 31 = O47, the calibration harness (a confidently-wrong judge admitted on a class)
+foreach(N RANGE 0 31)
   add_test(NAME lie_${N} COMMAND acme --selftest --lie ${N})
   set_tests_properties(lie_${N} PROPERTIES
     PASS_REGULAR_EXPRESSION "\\[PASS\\] ${LIE_LINE_${N}} "

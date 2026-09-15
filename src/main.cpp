@@ -74,6 +74,8 @@ struct Args {
   int   m_min = -1;              // --m-min N: the paired arm's outcomes a bar needs before it is measured (the writ's 200 if -1)   [E3]
   int   shift_day = 0;           // --shift-day D --shift-mult M: a planted shift of the arrival rate from day D (O59's world)   [E3]
   float shift_mult = 1.f;
+  float thin_wrong = -1.f;       // --thin-wrong X: the gate reads the calibrated wrong-rate against X where it read the raw margin (the writ's 0 = off)   [E3c]
+  int   m_calib = -1;            // --m-calib N: cells graded on the machine's own choice before a key's curve is measured (the writ's 30)   [E3c]
 };
 static Args parse(int argc, char** argv) {
   Args a;
@@ -90,6 +92,8 @@ static Args parse(int argc, char** argv) {
     else if (!strcmp(s, "--m-min")) a.m_min = next_i(-1);
     else if (!strcmp(s, "--shift-day")) a.shift_day = next_i(0);
     else if (!strcmp(s, "--shift-mult")) a.shift_mult = next_f(1.f);
+    else if (!strcmp(s, "--thin-wrong")) a.thin_wrong = next_f(-1.f);
+    else if (!strcmp(s, "--m-calib")) a.m_calib = next_i(-1);
     else if (!strcmp(s, "--days")) a.days = next_i(260);
     else if (!strcmp(s, "--warm")) a.warm = next_i(180);
     else if (!strcmp(s, "--futures")) a.futures = next_i(64);
@@ -252,6 +256,7 @@ struct MachineRun {
   void make_judges(Judge* judge_override, Judge* frontier_override = nullptr) {
     resident_judge.reset(new PlantJudge(make_resident_judge(&R.w)));
     if (a.judge_comp >= 0.f) resident_judge.reset(new PlantJudge(&R.w, 0x4A55444745ULL, JUDGE_RESIDENT_HASH, a.judge_comp, false));   // E3: the stub at a fixed competence (F-STUB)
+    if (a.lie == 31) resident_judge->invert_class = 3;         // THE LIE (O47): a judge confidently wrong on one class
     frontier.reset(new PlantJudge(make_frontier_judge(&R.w)));
     frontier_judge = frontier_override ? frontier_override : (Judge*)frontier.get();
     judge = judge_override ? judge_override
@@ -287,14 +292,17 @@ struct MachineRun {
       world_arrive(R.w, R.L, R.tape, (uint32_t)d);                                   // intake lands
       tick_fold(R.tape, R.L, (uint32_t)d, wall_for(a, d));                           // the clock is a row; the ledger's day moves
       read_switch_file((uint32_t)d);                                                 // D2: the switch, as a row
+      const size_t period_from = R.tape.size();                                      // E3c: the day's rows begin here; the calibration ingests them
       gov.draw_strata(R.L, R.tape);                                                  // the governor draws first
       res.period(R.L, R.f, R.tape, store, *judge, *frontier_judge, gov.lad);         // the resident goes next: it never sleeps
       human_day(R.w, R.L, R.f, R.tape, R.hs, rep, (uint32_t)d);
       const size_t settled_from = R.tape.size();
       world_settle(R.w, R.L, R.f, R.tape, (uint32_t)d);
       gov.grade(R.tape, settled_from, R.L);                                          // the governor folds the day's OUTCOME rows (F24: against the act's term's bar)
+      res.calib_ingest(R.tape, period_from);                                         // E3c: the live half of the curve, from the day's rows
       res.grade(R.L, *judge, *frontier_judge);                                       // the field learns; the judges are told
       gov.step(R.L, res.sup, R.tape);                                                // the ladder moves, as rows (E3: terms, lapses, the regime detector)
+      if (Ladder::term_boundary((uint32_t)d, R.f.writ.term_days)) res.calib_open_term(R.L, R.tape, (uint32_t)d);   // E3c: the curves freeze with the bars
       ++periods;
       dump_snapshot(R.tape, R.L, R.f, (uint32_t)d, &gov.lad, &res.st);
       if (file && ckpt_every > 0 && ((d + 1 - warm) % ckpt_every == 0 || d + 1 == total)) checkpoint((uint32_t)d);
@@ -320,6 +328,8 @@ static AutoOut run_machine(const Args& a, Run& R, int warm_days, int total_days,
   MachineRun M(a, R, warm_days, total_days);
   if (a.budget > 0) R.f.writ.read_budget = a.budget;
   if (a.m_min > 0) R.f.writ.m_min = a.m_min;                // E3: the bar's sample floor, authored
+  if (a.thin_wrong >= 0.f) R.f.writ.thin_wrong = a.thin_wrong;   // E3c: the calibrated thin test
+  if (a.m_calib > 0) R.f.writ.m_calib = a.m_calib;
   if (a.tape) {                                             // D1: the durable tape sees every row from the header on
     M.tape_dir = a.tape; M.ckpt_every = a.ckpt_every;
     M.file.reset(new TapeFile()); uint8_t genesis[32] = {0};
@@ -340,6 +350,7 @@ static AutoOut run_machine(const Args& a, Run& R, int warm_days, int total_days,
   M.gov.lie_band_dependent = (a.lie == 19);
   M.gov.lie_regime_deaf = (a.lie == 30);                     // O59's lie
   M.res.lie_stratum_off = (a.lie == 26);                     // O20's lie
+  M.res.lie_calib_blind = (a.lie == 31);                     // O47's lie, with the plant judge inverted on one class (make_judges)
   M.res.lie_reads_clock = (a.lie == 23);                     // O25's lie
   M.res.lie_effect_under_off = (a.lie == 22);                // O19's lie
   M.res.lie_silent_proposal = (a.lie == 21);                 // O30's lie
@@ -349,13 +360,14 @@ static AutoOut run_machine(const Args& a, Run& R, int warm_days, int total_days,
 
   // ---- PHASE 3: REPLAY. The fast grader, on its own support.
   double t0 = now_s();
-  M.RP = replay(R.L, R.f, M.res.fd, M.C, M.gov.lad, R.f.writ, M.store, *M.judge);
+  M.RP = replay(R.L, R.f, M.res.fd, M.C, M.gov.lad, R.f.writ, M.store, *M.judge, &M.res.calib);   // E3c: the history half of the curve
   M.replay_ms = (now_s() - t0) * 1000.0;
   for (int c = 0; c < R.w.NC; ++c) M.C.coverage[c] = M.RP.coverage[c];
   M.res.C.coverage = M.C.coverage;                          // the resident reads with the measured coverage from here on
   M.hist_licensed = M.gov.license_from_history(M.RP, (uint32_t)warm_days, R.tape);
   if (a.test_admit) M.gov.admit_all_for_test((uint32_t)warm_days, R.tape);   // E3: O31's harness; never outside --o31 and the battery
   M.gov.open_term((uint32_t)warm_days, R.tape);              // E3: the first term opens: the bars freeze from the shadow record
+  M.res.calib_open_term(R.L, R.tape, (uint32_t)warm_days);   // E3c: and the calibration curves freeze, as CALIB rows the gate reads back
 
   // ---- PHASE 4+: live. Both the remaining humans and the resident, on one world.
   t0 = now_s();
@@ -502,6 +514,7 @@ static int cmd_automate(const Args& a) {
               "  than holding them in shadow forever.\n", licensed_bands, unlicensable);
   print_binding_reasons(A.lad, R.f.writ, (uint32_t)(a.days - 1));
   print_retained(R.tape, R.w.NC, (uint32_t)a.warm);            // E3: the control arm, per class (O20's reading)
+  print_calib(R.L, R.w.NC);                                    // E3c: the curve the gate read this term (O47's reading)
 
   rule("PHASE 5 · WHAT THE RESIDENT DID");
   std::printf("  acted unattended %llu   drafted for a person %llu   rented a frontier mind %llu\n"
@@ -1056,6 +1069,7 @@ static int cmd_selftest(const Args& a) {
           case R_LICENSE:  if (r.seat != -3 || r.arm != ARM_GOVERNOR || r.via >= LC_N || r.a < 0 || r.a > 5) shape_fail(r, "governor/cause/rung"); break;   // E3: the cause on via
           case R_KAPPA:    if (r.seat != -3 || r.arm != ARM_GOVERNOR) shape_fail(r, "governor"); break;
           case R_REGIME:   if (r.seat != -3 || r.arm != ARM_GOVERNOR || r.a != 1 || r.b < 0 || r.value <= 0.f) shape_fail(r, "regime"); break;   // E3
+          case R_CALIB:    if (r.seat != -1 || r.arm != ARM_MACHINE || r.prov != PROV_M || r.a < 0 || r.a >= CALIB_NBIN || r.b < 0 || r.margin < 0.f || r.margin > 1.f || r.via > 1 || r.band > 1) shape_fail(r, "calib"); break;   // E3c
           case R_STRATUM:  if (r.seat != -3 || r.arm != ARM_GOVERNOR || r.a < 0 || r.a > 3 || r.oid == 0 || r.margin < 0.f) shape_fail(r, "stratum"); break;
           default: break;
         }
@@ -1240,7 +1254,8 @@ static int cmd_selftest(const Args& a) {
           g.in_canary = (stratum == 1); g.in_audit = (stratum == 2); g.to_incumbent = (stratum == 3);   // E3: the retained stratum from the row
           g.budget_left = 1e9f;                                // an effect exists, so the budget was there
           g.sw = F.sw; g.value = cls_spec(r.cls).value; g.exposure_left = 1e30f;   // and the exposure
-          g.sw = F.sw;
+          g.calib_measured = F.calib_measured_of(r.cls) && F.calib_monotone_of(r.cls);   // E3c: the curve in force, from the CALIB rows folded so far
+          g.calib_wrong = F.calib_wrong_of(r.cls, std::fabs(m->direction));
           const GateOut v = gate(g, A.f.writ);
           const int want = (r.via == 1) ? V_ACT : (r.via == 2) ? V_DRAFT : (r.via == 3) ? V_FRONTIER : V_WARRANT;
           if (v.verdict == want) ++ok_n; else { ++mismatched; if (first_bad_via < 0) { first_bad_via = r.via; first_bad_verdict = v.verdict; } }
@@ -1525,6 +1540,36 @@ static int cmd_selftest(const Args& a) {
       snprintf(buf, sizeof buf, "(a 1.6x shift from day 80: %ld REGIME rows, %ld bands dropped to watching; the world without a shift: %ld REGIME rows)", fired, dropped, quiet);
       ck(LIE == 30 ? !ok : ok, "O59  the regime detector fires on a planted shift of arrivals and stays quiet without one", buf);
     }
+    // --- O47: THE CALIBRATION HARNESS (E3c). From the rows: CALIB rows freeze
+    //          a curve per class per term; every class the judge is licensed
+    //          on is measured and monotone; no unattended act lands on a key
+    //          whose curve in force is unmeasured or not monotone (unmeasured is
+    //          never safe). The lie: a judge confidently wrong on one class
+    //          (its choice flipped where |signal| is largest) admitted there by
+    //          a resident that ignores the flag.
+    {
+      Run S47; S47.f = build_acme(200, 7, 7); S47.w = make_world(7); S47.w.demand_scale = 1.5f;
+      if (LIE == 31) { Args a47 = aa; a47.lie = 31; const AutoOut o47 = run_machine(a47, S47, a47.warm, a47.days, false); (void)o47; }
+      const Tape& T = (LIE == 31) ? S47.tape : A.tape;
+      const int NC47 = A.w.NC;
+      std::vector<uint8_t> meas(NC47, 0), mono(NC47, 1), ever_nonmono(NC47, 0);
+      long calib_rows = 0, acts = 0, acts_inadmissible = 0; int terms = 0; uint32_t last_calib_day = 0xFFFFFFFFu;
+      for (const Rec& r : T.rec) {
+        if (r.type == R_CALIB && r.cls < NC47) {
+          ++calib_rows; if (r.day != last_calib_day) { ++terms; last_calib_day = r.day; }
+          meas[r.cls] = r.via; mono[r.cls] = r.band; if (r.via && !r.band) ever_nonmono[r.cls] = 1;
+        }
+        if (r.type == R_EFFECT && !(r.flags & RF_SHADOW) && (r.via == 1 || r.via == 3) && r.cls < NC47) {
+          ++acts; if (!meas[r.cls] || !mono[r.cls]) ++acts_inadmissible;
+        }
+      }
+      int measured = 0, monotone = 0, nonmono_ever = 0;
+      for (int c = 0; c < NC47; ++c) { if (meas[c]) { ++measured; if (mono[c]) ++monotone; } nonmono_ever += ever_nonmono[c]; }
+      const bool ok = calib_rows > 0 && terms >= 2 && measured >= NC47 / 2 && acts > 0 && acts_inadmissible == 0 && nonmono_ever == 0;
+      snprintf(buf, sizeof buf, "(%ld CALIB rows over %d terms; %d of %d classes measured, %d of those monotone, %d ever flagged non-monotone; %ld unattended acts, %ld on a key unmeasured or not monotone)",
+               calib_rows, terms, measured, NC47, monotone, nonmono_ever, acts, acts_inadmissible);
+      ck(LIE == 31 ? !ok : ok, "O47  the calibration curve per key is monotone, frozen per term as rows, and an unmeasured or non-monotone key licenses nothing", buf);
+    }
   }
 
   // --- O2: the gate can never widen. Exhaustive over the input lattice.
@@ -1541,6 +1586,7 @@ static int cmd_selftest(const Args& a) {
              GateIn g{}; g.rung = rung; g.reversible = rev; g.warrant_reserved = war; g.blocked = blk;
              g.in_canary = can; g.in_audit = aud; g.direction = -2.f + 0.5f * di; g.novelty = 0.2f * nv;
              g.sharpness = 0.f; g.budget_left = 1000.f; g.sw = SW_LIVE; g.value = 1.f; g.exposure_left = 1e30f;
+             g.calib_measured = true; g.calib_wrong = 0.f;      // E3c: a measured, monotone key; the uncalibrated axis is checked below
              const GateOut v = gate(g, wr); ++cases;
              if (v.verdict == V_ACT) { ++acts;
                if (rung <= 0 || war || blk) ok = false;           // an unlicensed act is a widening
@@ -1559,6 +1605,9 @@ static int cmd_selftest(const Args& a) {
              // E3: the retained stratum holds every point, at every rung, for a person
              GateIn gt = g; gt.to_incumbent = true; const GateOut vt = gate(gt, wr);
              if (vt.verdict != V_HOLD || (vt.reason != RS_RETAINED && vt.reason != RS_BLOCKED && vt.reason != RS_SWITCH_OFF)) ok = false;
+             // E3c: an unmeasured key never acts and never rents: unmeasured is never safe
+             GateIn gc = g; gc.calib_measured = false; const GateOut vc = gate(gc, wr);
+             if (vc.verdict == V_ACT || vc.verdict == V_FRONTIER) ok = false;
            }
     if (LIE == 2) ok = !ok;                                       // THE LIE
     snprintf(buf, sizeof buf, "(%ld lattice points, %ld reached ACT; pressure never widened; off held every point; an exhausted exposure allowance held every act and moved nothing else; retained held every point)", cases, acts);
@@ -1570,13 +1619,13 @@ static int cmd_selftest(const Args& a) {
     Writ wr; bool ok = true;
     for (int rung = 1; rung <= 2; ++rung) {
       GateIn g{}; g.rung = rung; g.reversible = true; g.direction = 3.f; g.novelty = 0.1f; g.sw = SW_LIVE; g.value = 1.f; g.exposure_left = 1e30f;
-      g.in_canary = true; g.budget_left = 0.f;
+      g.in_canary = true; g.budget_left = 0.f; g.calib_measured = true;
       const GateOut v = gate(g, wr);
       if (v.verdict == V_ACT) ok = false;
       if (v.verdict != V_HOLD || v.reason != RS_NO_BUDGET) ok = false;
     }
     if (LIE == 3) { GateIn g{}; g.rung = 9; g.reversible = true; g.direction = 3.f; g.in_canary = true; g.sw = SW_LIVE; g.value = 1.f; g.exposure_left = 1e30f;
-                    g.budget_left = 0.f; ok = (gate(g, wr).verdict == V_HOLD); }
+                    g.budget_left = 0.f; g.calib_measured = true; ok = (gate(g, wr).verdict == V_HOLD); }
     ck(LIE == 3 ? !ok : ok, "O3   out of supervision degrades to HOLD, never to acting");
   }
 

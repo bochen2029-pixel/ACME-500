@@ -107,6 +107,14 @@ struct Writ {
   int   m_term     = 10;
   float bar_z      = 1.2816f;
   float regime_tol = 0.20f;
+  int   term_days  = 30;        // the term: the bars and the calibration curves freeze on its boundaries
+  // E3c: THE CALIBRATION HARNESS (ARCHITECTURE v4 §28.5). A licence key needs
+  // m_calib cells graded on the machine's own executed choice before its curve
+  // is measured (an unmeasured key reads rung 0); thin_wrong > 0 makes the gate
+  // read the calibrated wrong-rate where it read the raw direction against
+  // thin_margin (0 = the raw margin, as before).
+  int   m_calib    = 30;
+  float thin_wrong = 0.f;
   int   read_budget  = 50000;   // C1: Judge::read calls per period, a dial [BUDGET]: one resident
                                 // card at ~0.6 reads a second over a day-long period. Behind the port a
                                 // read is a forward pass; the field spends them ripest-first on cells

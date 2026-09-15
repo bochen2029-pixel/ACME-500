@@ -61,7 +61,7 @@ struct Governor {
     NC = nc; wr = writ;
     lad.init(nc, schema_pin, judge_hash);
     lad.template_hash = template_hash;
-    lad.delta = writ.canary_delta; lad.m_min = writ.m_min; lad.m_term = writ.m_term; lad.bar_z = writ.bar_z;
+    lad.delta = writ.canary_delta; lad.m_min = writ.m_min; lad.m_term = writ.m_term; lad.bar_z = writ.bar_z; lad.term_days = writ.term_days;
     per_term.assign(nc, 1.f); arr_prev.assign(nc, -1);
     // n0 per class-band, and mark the ones the world will never answer fast
     // enough to license. The honest account prints them as human rather than

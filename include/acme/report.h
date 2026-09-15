@@ -366,6 +366,29 @@ inline void print_retained(const Tape& tape, int NC, uint32_t warm) {
   std::printf("  %-22s %8ld %8ld %6ld   %8ld (all bands)\n", "all", td, tp, ta, ti);
 }
 
+// THE CALIBRATION (E3c, O47). Per class, the curve the gate read this term, from
+// the ledger's fold of the CALIB rows: cells graded, the raw wrong-rate per
+// |direction| bin, the monotone fit, and whether the key is measured and
+// admissible. A wrong-rate that rises with the judge's confidence is printed
+// as NON-MONOTONE, and that class reads rung 0 until a term says otherwise.
+inline void print_calib(const Ledger& L, int NC) {
+  const float* e = calib_edges();
+  std::printf("\n  THE CALIBRATION — wrong-rate by |direction| per class, frozen for the term (raw / fit); a key with no\n"
+              "  measured monotone curve reads rung 0. Bins over |direction|:");
+  for (int b = 0; b < CALIB_NBIN; ++b) std::printf(" [%.2f,%s)", e[b], b + 1 < CALIB_NBIN ? (std::to_string(e[b + 1]).substr(0, 4)).c_str() : "inf");
+  std::printf("\n\n  %-22s %6s %5s %5s  %s\n", "class", "cells", "meas", "mono", "raw/fit per bin");
+  int measured = 0, mono = 0;
+  for (int c = 0; c < NC; ++c) {
+    long cells = 0; for (int b = 0; b < CALIB_NBIN; ++b) cells += L.calib_n_of(c, b);
+    const bool m = L.calib_measured_of(c), mo = L.calib_monotone_of(c);
+    measured += m ? 1 : 0; mono += (m && mo) ? 1 : 0;
+    std::printf("  %-22s %6ld %5s %5s ", cls_spec(c).name, cells, m ? "yes" : "no", mo ? "yes" : "NO");
+    for (int b = 0; b < CALIB_NBIN; ++b) std::printf(" %.2f/%.2f", L.calib_raw_of(c, b), L.calib_fit_of(c, b));
+    std::printf("\n");
+  }
+  std::printf("  %d of %d classes measured, %d of those monotone (admissible)\n", measured, NC, mono);
+}
+
 // COGNITIVE PATH LENGTH (§9.3, D1). Per decided cell: the rows about it from
 // its arrival to its terminal DECIDE or EFFECT (fetches, frames, handoffs,
 // holds in force, proposals), the seats it passed through (hops, from the

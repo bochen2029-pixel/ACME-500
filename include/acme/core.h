@@ -197,11 +197,13 @@ enum RecType : uint16_t {
                  // b = 1 if the judge could say, margin = d signal / d fact, value = the fact's value read
   R_REGIME,      // E3: the governor's regime detector fired for a class: a = the detector kind (1 arrivals),
                  // b = the closing term's count, margin = the previous term's, value = the ratio; the bands drop to watching
+  R_CALIB,       // E3c: the calibration curve frozen for the term, one row per class per |direction| bin: a = the bin,
+                 // b = the cells graded in it, margin = the fitted wrong-rate, value = the raw, via = measured, band = monotone
   R_N
 };
 inline const char* rec_type_name(int t) {
   static const char* n[] = { "NONE","ARRIVE","ASSIGN","HOLD","DECIDE","EFFECT","UNDO","ESCALATE","OUTCOME","CONTEXT","MEETING",
-                             "TICK","LICENSE","KAPPA","PATCH","NOTE","HEADER","PROPOSAL","STRATUM","COUNSEL","ACT","RECEIPT","CORRECTION","SENSE","REGIME" };
+                             "TICK","LICENSE","KAPPA","PATCH","NOTE","HEADER","PROPOSAL","STRATUM","COUNSEL","ACT","RECEIPT","CORRECTION","SENSE","REGIME","CALIB" };
   return (t >= 0 && t < R_N) ? n[t] : "?";
 }
 enum ActKind : uint8_t { ACT_FETCH = 0, ACT_FRAME, ACT_DECIDE, ACT_COMMIT, ACT_TRANSPORT, ACT_REWORK, ACT_GLUE, ACT_MEETING, ACT_N };

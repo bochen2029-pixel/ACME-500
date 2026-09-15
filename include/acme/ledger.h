@@ -20,6 +20,7 @@
 // ============================================================================
 #pragma once
 #include "core.h"
+#include "calib.h"   // E3c: the calibration curve in force is a fold of CALIB rows; the gate reads it from here
 
 namespace acme {
 
@@ -148,8 +149,24 @@ struct Ledger {
   std::vector<uint32_t>   stratum_day;        // [oid] the period of the last draw (+1; 0 = never drawn)
   std::vector<float>      stratum_rate;       // [oid] the canary rate the draw in force was made against
   std::vector<float>      stratum_audit;      // [oid] the audit rate likewise
+  // E3c: THE CALIBRATION CURVE IN FORCE, folded from CALIB rows: per class per
+  // |direction| bin the fitted and raw wrong-rates and the count, and per class
+  // whether the key is measured and monotone this term. The gate reads these.
+  std::vector<float>      calib_fit, calib_raw;   // [cls*CALIB_NBIN+bin]
+  std::vector<long>       calib_n;                // [cls*CALIB_NBIN+bin]
+  std::vector<uint8_t>    calib_measured, calib_monotone;   // [cls]
 
-  void init(int nc) { NC = nc; by_class.assign(nc, TimeLedger{}); }
+  void init(int nc) {
+    NC = nc; by_class.assign(nc, TimeLedger{});
+    calib_fit.assign((size_t)nc * CALIB_NBIN, 0.f); calib_raw.assign((size_t)nc * CALIB_NBIN, 0.f); calib_n.assign((size_t)nc * CALIB_NBIN, 0);
+    calib_measured.assign(nc, 0); calib_monotone.assign(nc, 0);
+  }
+  bool  calib_measured_of(int c) const { return c >= 0 && c < (int)calib_measured.size() && calib_measured[c] != 0; }
+  bool  calib_monotone_of(int c) const { return c >= 0 && c < (int)calib_monotone.size() && calib_monotone[c] != 0; }
+  float calib_fit_of(int c, int b) const { const size_t k = (size_t)c * CALIB_NBIN + b; return k < calib_fit.size() ? calib_fit[k] : 0.f; }
+  float calib_raw_of(int c, int b) const { const size_t k = (size_t)c * CALIB_NBIN + b; return k < calib_raw.size() ? calib_raw[k] : 0.f; }
+  long  calib_n_of(int c, int b) const { const size_t k = (size_t)c * CALIB_NBIN + b; return k < calib_n.size() ? calib_n[k] : 0; }
+  float calib_wrong_of(int c, float absdir) const { return calib_fit_of(c, calib_bin_of(absdir)); }
   const LastProp* memo(uint32_t oid) const { return (oid < last_prop.size() && last_prop[oid].valid) ? &last_prop[oid] : nullptr; }
   int   stratum_of(uint32_t oid) const { return oid < stratum_kind.size() ? (int)stratum_kind[oid] : 0; }
   float stratum_rate_of(uint32_t oid) const { return oid < stratum_rate.size() ? stratum_rate[oid] : 0.f; }
@@ -271,6 +288,13 @@ struct Ledger {
         return;
       }
       case R_NOTE: { if (r.a == 2) sw = r.b; return; }     // D2: the switch moved (the world port wrote it); other notes move nothing
+      case R_CALIB: {                                      // E3c: the curve frozen for the term, one row per class per bin
+        if (r.cls >= NC || r.a < 0 || r.a >= CALIB_NBIN) return;
+        const size_t k = (size_t)r.cls * CALIB_NBIN + r.a;
+        calib_fit[k] = r.margin; calib_raw[k] = r.value; calib_n[k] = r.b;
+        calib_measured[r.cls] = r.via; calib_monotone[r.cls] = r.band;
+        return;
+      }
       case R_EFFECT: {
         if (r.flags & RF_SHADOW) {                          // D2: a shadow effect is a record of what would have happened; the cell stands
           if (Obligation* o = at_oid(r.oid)) o->shadow_key = (uint8_t)(1 + ((r.via & 7) | ((r.a & 1) << 3) | ((r.band & 3) << 4)));
@@ -329,6 +353,17 @@ inline FoldDiff ledger_diff(const Ledger& L, const Ledger& w) {
   FoldDiff d;
   auto miss = [&](const char* what, size_t i) { if (d.fields++ == 0) snprintf(d.first, sizeof d.first, "%s at index %zu", what, i); };
   if (L.ob.size() != w.ob.size()) { miss("ob.size", 0); return d; }
+  // E3c: the calibration curve in force is part of the fold
+  for (size_t i = 0; i < std::max(L.calib_fit.size(), w.calib_fit.size()); ++i) {
+    const float fa = i < L.calib_fit.size() ? L.calib_fit[i] : 0.f, fb = i < w.calib_fit.size() ? w.calib_fit[i] : 0.f;
+    const long  na = i < L.calib_n.size() ? L.calib_n[i] : 0, nb = i < w.calib_n.size() ? w.calib_n[i] : 0;
+    if (fa != fb || na != nb) miss("calib", i);
+  }
+  for (size_t c = 0; c < std::max(L.calib_measured.size(), w.calib_measured.size()); ++c) {
+    const uint8_t ma = c < L.calib_measured.size() ? L.calib_measured[c] : 0, mb = c < w.calib_measured.size() ? w.calib_measured[c] : 0;
+    const uint8_t oa = c < L.calib_monotone.size() ? L.calib_monotone[c] : 0, ob = c < w.calib_monotone.size() ? w.calib_monotone[c] : 0;
+    if (ma != mb || oa != ob) miss("calib flags", c);
+  }
   for (size_t i = 0; i < w.ob.size(); ++i) {
     const Obligation& a = L.ob[i]; const Obligation& b = w.ob[i];
     if (a.id != b.id) miss("id", i);
