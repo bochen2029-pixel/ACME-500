@@ -34,7 +34,9 @@ echo "build exit $?  warnings: $(grep -c warning "$OUT/build.txt")  commit $COMM
 /usr/bin/time -f "selftest wall %e s" ./acme --selftest > "$OUT/selftest.txt" 2> "$OUT/selftest.time"
 echo "selftest exit $?  $(tail -1 "$OUT/selftest.txt")  $(cat "$OUT/selftest.time")"
 grep "FAIL" "$OUT/selftest.txt"
-MAXLIE=$(grep -o "foreach(N RANGE 0 [0-9]*)" CMakeLists.txt | grep -o "[0-9]*$")
+MAXLIE=$(sed -n 's/.*foreach(N RANGE 0 \([0-9][0-9]*\)).*/\1/p' CMakeLists.txt | head -1)
+if [ -z "$MAXLIE" ]; then echo "could not read the lie range from CMakeLists.txt"; exit 2; fi
+echo "lie arms 0..$MAXLIE"
 for n in $(seq 0 "$MAXLIE"); do
   L=$(grep -o "set(LIE_LINE_$n \"[A-Za-z0-9]*\")" CMakeLists.txt | sed "s/.*\"\(.*\)\".*/\1/")
   ./acme --selftest --lie "$n" > "$OUT/lie-$n.txt" 2>&1
