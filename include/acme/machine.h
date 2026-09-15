@@ -352,6 +352,7 @@ struct Resident {
   bool    lie_reads_clock = false;       // O25's lie: a resident that reads the TICK row's wall value. Never set outside the battery.
   bool    lie_effect_under_off = false;  // O19's lie: a resident that lets one cell through with the switch off. Never set outside the battery.
   bool    lie_silent_proposal = false;   // O30's lie: a proposal folded into the memo without its row. Never set outside the battery.
+  bool    lie_stratum_off = false;       // O20's lie: a resident that acts on retained cells of the wide band. Never set outside the battery.
 
   // C1: the resident is told the class count and the seat count, holds the
   // compile step's output and the writ (which no longer carries the salt), and
@@ -572,6 +573,8 @@ inline void Resident::period(Ledger& L, Firm& f, Tape& tape, const Store& store,
     g.reversible = sp.reversible; g.warrant_reserved = sp.warrant; g.blocked = blocked;
     g.in_canary = (stratum == 1);
     g.in_audit  = (stratum == 2);
+    g.to_incumbent = (stratum == 3);                              // E3: the retained stratum holds for a person, at every rung
+    if (lie_stratum_off && b == 2) g.to_incumbent = false;        // THE LIE (O20): the wide band's control arm switched off
     g.budget_left = (float)(adjudication_budget_min - adj_used * 45.0);
     g.sw = L.sw;
     g.value = sp.value;                                           // E0: what an unattended act would put in flight

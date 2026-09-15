@@ -42,8 +42,16 @@
 #include "firm.h"
 #include "ledger.h"
 #include "port.h"
+#include "license.h"   // E3: the boundary judge reads the governor's frozen bar (the instrument's side, never the kernel's)
 
 namespace acme {
+
+// E3: the governor's ladder, exposed to the boundary judge for the run's
+// duration so that O31's judge can sit on each TERM's frozen boundary rather
+// than on its own daily estimate of it (the bar moves between terms; a term's
+// process is a null instance only against that term's bar). Set by the world
+// port around a run; read by BoundaryJudge and by nothing else.
+inline const Ladder* g_boundary_ladder = nullptr;
 
 // ----------------------------------------------------------------------------
 // §0 · THE PLANTED HALF OF THE CLASS TABLE
@@ -138,6 +146,10 @@ struct World {
   // E0: THE WORLD THAT DOES NOT ANSWER. A decided cell is never graded with
   // this probability; the writ's write-off rule closes it as UNRESOLVED.
   float unresolved_rate = 0.f;
+  // E3: A PLANTED SHIFT of the arrival rate from a day (O59's world): the
+  // regime detector must hear it, and must hear nothing in a world without one.
+  uint32_t shift_day = 0;
+  float    shift_mult = 1.f;
 };
 // the epoch of a class's shared fact on a day: how many changes are at or before it
 inline uint32_t shared_epoch(const World& w, int c, uint32_t day) {
@@ -365,7 +377,8 @@ inline int arrivals_today(const World& w, int c, uint32_t day) {
   const float dow = (day % 7 >= 5) ? 0.18f : 1.18f;                       // weekends
   const float season = 1.0f + 0.22f * std::sin(day * 0.0172f);
   const float regime = (day > 260) ? 1.25f : 1.0f;                        // a planted regime change
-  const double lam = s.arrival_per_day * w.demand_scale * dow * season * regime;
+  const float shift = (w.shift_day > 0 && day >= w.shift_day) ? w.shift_mult : 1.0f;   // E3: the planted shift, O59's
+  const double lam = s.arrival_per_day * w.demand_scale * dow * season * regime * shift;
   // inverse-transform Poisson, deterministic on (day, class)
   double L = std::exp(-lam), p = 1.0; int k = 0;
   do { ++k; p *= u01(w.seed, 2000 + c, day * 131 + k); } while (p > L && k < 400);
@@ -633,7 +646,7 @@ inline PlantJudge make_frontier_judge(const World* w) { return PlantJudge(w, 0x4
 // the plant's judge, never the kernel's. `shift` lifts the target: the lie a
 // judge above the boundary tells under the boundary judge's name (O31's lie).
 // ----------------------------------------------------------------------------
-enum BoundaryAt { BJ_AT_BAR = 0, BJ_AT_G0 = 1 };
+enum BoundaryAt { BJ_AT_BAR = 0, BJ_AT_G0 = 1, BJ_AT_G0U = 2 };   // g0 from the plug-in bar (the rule as built); g0 from the bar at its upper bound (the ladder v2)
 enum : uint32_t { JUDGE_BOUNDARY_HASH = 0x504C4231u };   // 'PLB1'
 struct BoundaryJudge : Judge {
   const World* w; const Ledger* L; const Writ* wr;
@@ -643,6 +656,7 @@ struct BoundaryJudge : Judge {
   std::vector<long>   reads, late_reads;               // [cls*NBAND+b], reads and reads already past due (a reading, not an input)
   std::vector<double> target, gbar, late_act;          // [cls*NBAND+b], refreshed once a day from the ledger
   std::vector<double> used_sum; std::vector<long> used_n;   // [cls*NBAND+b] the target as used when a coin was spent, so the reading is fair
+  std::vector<float>  pc_used;                         // [oid] the probability of a correct choice the coin was spent at (1 on a late read; -1 never read)
   uint32_t target_day = 0xFFFFFFFFu;
   BoundaryJudge(const World* world, const Ledger* ledger, const Writ* writ, int at_, float delta_, float comp_, float shift_)
     : w(world), L(ledger), wr(writ), at(at_), delta(delta_), comp(comp_), shift(shift_),
@@ -667,16 +681,27 @@ struct BoundaryJudge : Judge {
     for (const Obligation& o : L->ob) {
       if (o.cls >= w->NC) continue;
       const size_t k = (size_t)o.cls * NBAND + (o.band < NBAND ? o.band : NBAND - 1);
-      if (o.by_machine && (o.via == 1 || o.via == 3) && (o.state == OB_DECIDED || o.state == OB_SETTLED)) {
+      // over the last thirty days only: the cumulative share lagged the backlog's
+      // clearing and ran the coin hot once the fresh arrivals dominated (+3.7 points)
+      if (o.by_machine && (o.via == 1 || o.via == 3) && (o.state == OB_DECIDED || o.state == OB_SETTLED) && o.day_decided + 30 > L->day) {
         ++an[k]; if (o.day_decided > o.day_due) ++al[k];
       }
       if (o.state != OB_SETTLED || o.by_machine || o.outcome == OK_UNRESOLVED) continue;
       ++n[k]; if (o.outcome == OK_GOOD) ++g[k];
     }
     for (size_t k = 0; k < n.size(); ++k) {
-      const double p = (n[k] >= 12) ? (double)g[k] / (double)n[k] : 0.72;
+      double p = (n[k] >= 12) ? (double)g[k] / (double)n[k] : 0.72;
+      if (at == BJ_AT_G0U && n[k] >= 12) {                        // the ladder v2's bar: the rate at its upper one-sided bound
+        const double se = std::sqrt(std::max(0.0, p * (1.0 - p)) / (double)n[k]);
+        p = std::min(0.98, std::max(0.02, p + (double)wr->bar_z * se));
+      }
       gbar[k] = p;
-      const double t = (at == BJ_AT_G0) ? 1.0 - (1.0 - p) * (1.0 + (double)delta) : p;
+      double t = (at == BJ_AT_BAR) ? p : 1.0 - (1.0 - p) * (1.0 + (double)delta);
+      // the ladder v2's null: the TERM's frozen boundary itself, where the governor has one
+      if (at == BJ_AT_G0U && g_boundary_ladder && (int)(k / NBAND) < g_boundary_ladder->NC) {
+        const Lic& L = g_boundary_ladder->at((int)(k / NBAND), (int)(k % NBAND));
+        if (L.bar_g0 > 0.0) t = L.bar_g0;
+      }
       target[k] = std::min(0.98, std::max(0.02, t + (double)shift));
       late_act[k] = an[k] ? (double)al[k] / (double)an[k] : 0.0;
     }
@@ -693,12 +718,22 @@ struct BoundaryJudge : Judge {
     const Obligation* cell = L->at_oid(f.oid);
     const bool late = cell && L->day > cell->day_due;
     ++reads[k]; if (late) ++late_reads[k];
+    if (f.oid >= pc_used.size()) pc_used.resize((size_t)f.oid + 1024, -1.f);
+    // The coin is the target itself on an on-time read, and nothing corrects it
+    // for the machine's own late share: every estimate of that share tried (the
+    // cumulative, a trailing window, the wager's acted cells) ran the coin to
+    // certainty during the backlog era and placed the judge above its target.
+    // So the judge's good rate is the target times the share of its acts that
+    // were on time, which is INSIDE the null by construction, and its true
+    // position is read off the coins it spent (pc_used) and printed. Where a
+    // judge at the boundary itself is wanted, --shift lifts the target.
     bool correct = true;                                              // a late read cannot be good; the coin is not spent on it
     if (!late) {
-      const double pc = std::min(1.0, target[k] / std::max(0.05, 1.0 - late_act[k]));
+      const double pc = std::min(1.0, target[k]);
       correct = u01(key, 7300 + f.cls, f.oid) < (float)pc;
       used_sum[k] += target[k]; used_n[k] += 1;                      // the target as it stood when the coin was spent
-    }
+      pc_used[f.oid] = (float)pc;                                     // the coin itself, per cell, so the judge's true position is a reading
+    } else pc_used[f.oid] = 1.f;
     Proposal p; p.choice = correct ? truth : 1 - truth;
     p.signal = std::fabs(signal) * (p.choice ? 1.f : -1.f);   // the magnitude is the read's; the sign is the choice's
     p.completeness_hat = f.coverage_hat; p.judge_hash = JUDGE_BOUNDARY_HASH;

@@ -267,30 +267,35 @@ inline void print_minutes_by_via(const MinutesByVia& M, const char* title) {
 // nothing on the ladder applies. `unlicensable` (n0 unreachable inside a term
 // at any tolerable canary rate) is a label the ladder never reads, so it is
 // printed as a qualifier on the reason and never as the reason.
-enum Binding { BR_TOP = 0, BR_THIN_BAND, BR_NO_HISTORY, BR_N_MACHINE, BR_LOGE, BR_KAPPA, BR_EXPIRY, BR_WIDENING, BR_N };
+// E3: the ladder v2's vocabulary. Where the bar binds, the lever is the paired
+// arm's outcomes in the band (the retained stratum and the shadow record);
+// where logE binds, the world has answered and the term's evidence has not
+// reached the next rung's threshold; n0 no longer binds anything.
+enum Binding { BR_TOP = 0, BR_THIN_BAND, BR_NO_HISTORY, BR_BAR, BR_LOGE, BR_KAPPA, BR_TERM, BR_WIDENING, BR_N };
 inline const char* binding_name(int r) {
-  static const char* n[] = { "at-top", "thin-band", "no-history", "n_machine", "logE", "kappa", "expiry", "widening" };
+  static const char* n[] = { "at-top", "thin-band", "no-history", "bar-unmeasured", "logE", "kappa", "term", "widening" };
   return n[r % BR_N];
 }
 inline const char* binding_lever(int r) {
   static const char* n[] = { "rung 5; nothing binds",
                              "the thin band: drafted or rented at every rung, never a wager; nothing on the ladder applies",
                              "never admitted: the determinant the human read and the machine did not",
-                             "fewer wager outcomes than the floor: volume, the canary rate",
-                             "outcomes past the floor, the e-process below 1/alpha: the world's answer",
+                             "the paired arm has fewer than m_min outcomes in this band: the retained stratum and the shadow record",
+                             "the term's evidence below the next rung's threshold: the world's answer",
                              "supervision created exceeds supervision removed: the licence costs more than it saves",
-                             "past its expiry with no re-earned evidence: the next step narrows it",
-                             "evidence past 1/alpha: widens at the next step" };
+                             "the term closed with the rung not re-earned: it lapses one step",
+                             "evidence past the next threshold: widens at the next step" };
   return n[r % BR_N];
 }
 inline int binding_reason(const Lic& L, const Ladder& lad, const Writ& wr, uint32_t day, int band) {
+  (void)day;
   if (band == 0) return BR_THIN_BAND;
   if (L.rung >= 5) return BR_TOP;
   if (L.rung >= 1 && L.kappa() > wr.kappa_max && L.sup_removed > 60.0) return BR_KAPPA;
-  if (L.rung > 1 && L.expiry_day > 0 && (int)day > L.expiry_day) return BR_EXPIRY;
-  const bool enough = L.n_machine >= L.n0 || (L.history_licensed && band == 2 && L.n_machine >= std::max(20, L.n0 / 8));
-  if (!enough) return (L.rung == 0 && !L.history_licensed) ? BR_NO_HISTORY : BR_N_MACHINE;
-  if (L.logE <= std::log(1.0 / lad.alpha_promote)) return BR_LOGE;
+  if (L.rung == 0 && !L.history_licensed) return BR_NO_HISTORY;
+  if (L.bar <= 0.0) return BR_BAR;
+  if (L.n_term >= lad.m_term && L.term_rung < L.rung && L.rung > L.floor_rung) return BR_TERM;
+  if (L.logE < lad.threshold(L.rung + 1)) return BR_LOGE;
   return BR_WIDENING;
 }
 inline void print_binding_reasons(const Ladder& lad, const Writ& wr, uint32_t day) {
@@ -313,21 +318,52 @@ inline void print_binding_reasons(const Ladder& lad, const Writ& wr, uint32_t da
     for (int b = 0; b < NBAND; ++b) std::printf("  %5ld", n[r][b]);
     std::printf("  %5ld   %s\n", tot, binding_lever(r));
   }
-  std::printf("\n  %-22s %-34s %-11s %-18s %s\n", "class", "binding 0/1/2 (*: n0 unreachable)", "rung 0/1/2", "n_act 0/1/2", "n0");
+  std::printf("\n  %-22s %-38s %-11s %-18s %-17s %s\n", "class", "binding 0/1/2 (*: n0 unreachable)", "rung 0/1/2", "n_act 0/1/2", "bar 1/2 (n)", "n0");
   for (int c = 0; c < lad.NC; ++c) {
-    char bind[80]; snprintf(bind, sizeof bind, "%s/%s%s/%s%s",
+    char bind[96]; snprintf(bind, sizeof bind, "%s/%s%s/%s%s",
                             binding_name(binding_reason(lad.at(c, 0), lad, wr, day, 0)),
                             binding_name(binding_reason(lad.at(c, 1), lad, wr, day, 1)), lad.at(c, 1).unlicensable ? "*" : "",
                             binding_name(binding_reason(lad.at(c, 2), lad, wr, day, 2)), lad.at(c, 2).unlicensable ? "*" : "");
     char rung[32]; snprintf(rung, sizeof rung, "%d/%d/%d", lad.at(c, 0).rung, lad.at(c, 1).rung, lad.at(c, 2).rung);
     char nact[48]; snprintf(nact, sizeof nact, "%ld/%ld/%ld", lad.at(c, 0).n_machine, lad.at(c, 1).n_machine, lad.at(c, 2).n_machine);
-    std::printf("  %-22s %-34s %-11s %-18s %d\n", cls_spec(c).name, bind, rung, nact, lad.at(c, 0).n0);
+    char bars[40]; snprintf(bars, sizeof bars, "%.2f/%.2f (%d/%d)", lad.at(c, 1).bar, lad.at(c, 2).bar, lad.at(c, 1).bar_n, lad.at(c, 2).bar_n);
+    std::printf("  %-22s %-38s %-11s %-18s %-17s %d\n", cls_spec(c).name, bind, rung, nact, bars, lad.at(c, 0).n0);
   }
   std::printf("\n  * %ld of %d bands past the thin band have n0 unreachable inside a term at any tolerable canary\n"
-              "    rate (F14); the ladder never reads that label.  %ld bands sit at rung 5 with fewer wager\n"
-              "    outcomes than n0: the floor is checked against cumulative n_machine, so it is paid once and\n"
-              "    not per rung, and on a history-admitted band 2 it is n0/8 (F21, recorded and not fixed here).\n",
+              "    rate (F14's label; the ladder never reads it).  %ld bands sit at rung 5 with fewer wager outcomes\n"
+              "    than n0: under the ladder v2 that is a reading and not a defect, because n0 is the planning\n"
+              "    figure and the rung was earned by the term's process against a frozen bar (F21, F23 closed in E3).\n",
               unl, lad.NC * (NBAND - 1), top_under_floor);
+}
+
+// THE RETAINED STRATUM (E3, O20). Per class: the cells the governor drew into
+// the control arm, how many a person then decided, how many the machine acted
+// on while retained (must be zero), and the paired arm's outcomes that arrived
+// in the live period per band: the evidence the bar is frozen from at every
+// rung. The control arm never reaches zero, or the ladder has no baseline.
+inline void print_retained(const Tape& tape, int NC, uint32_t warm) {
+  std::vector<long> drawn(NC, 0), decided(NC, 0), acted(NC, 0);
+  std::vector<long> inc((size_t)NC * NBAND, 0);
+  std::vector<uint8_t> kind, was;
+  tape.fold([&](const Rec& r) {
+    if (r.oid != 0) {
+      if (r.oid >= kind.size()) { kind.resize((size_t)r.oid + 1024, 0); was.resize((size_t)r.oid + 1024, 0); }
+      if (r.type == R_STRATUM) { kind[r.oid] = (uint8_t)r.a; if (r.a == 3 && !was[r.oid] && r.cls < NC) { was[r.oid] = 1; ++drawn[r.cls]; } }
+      if (r.type == R_EFFECT && !(r.flags & RF_SHADOW) && kind[r.oid] == 3 && r.cls < NC) ++acted[r.cls];
+      if (r.type == R_DECIDE && was[r.oid] && r.cls < NC) ++decided[r.cls];
+    }
+    if (r.type == R_OUTCOME && r.via == 0 && r.day >= warm && r.a != OK_UNRESOLVED && r.cls < NC) ++inc[(size_t)r.cls * NBAND + (r.band < NBAND ? r.band : NBAND - 1)];
+  });
+  long td = 0, tp = 0, ta = 0, ti = 0;
+  std::printf("\n  THE RETAINED STRATUM — the control arm at every rung: cells drawn for a person, decided by one, acted\n"
+              "  on by the machine while retained (must be 0), and the paired arm's live outcomes per band\n\n");
+  std::printf("  %-22s %8s %8s %6s   %8s %8s %8s\n", "class", "retained", "decided", "acted", "inc b0", "inc b1", "inc b2");
+  for (int c = 0; c < NC; ++c) {
+    td += drawn[c]; tp += decided[c]; ta += acted[c]; for (int b = 0; b < NBAND; ++b) ti += inc[(size_t)c * NBAND + b];
+    std::printf("  %-22s %8ld %8ld %6ld   %8ld %8ld %8ld\n", cls_spec(c).name, drawn[c], decided[c], acted[c],
+                inc[(size_t)c * NBAND], inc[(size_t)c * NBAND + 1], inc[(size_t)c * NBAND + 2]);
+  }
+  std::printf("  %-22s %8ld %8ld %6ld   %8ld (all bands)\n", "all", td, tp, ta, ti);
 }
 
 // COGNITIVE PATH LENGTH (§9.3, D1). Per decided cell: the rows about it from

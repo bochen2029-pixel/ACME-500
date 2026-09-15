@@ -36,6 +36,7 @@ enum Reason : uint8_t {
   RS_UNREAD,         // C1: the read budget never reached this cell and it carries no proposal: a hold
   RS_SWITCH_OFF,     // D2: the switch is off; the machine decides nothing and says so
   RS_EXPOSURE,       // E0: the outstanding exposure would exceed the writ's cap; an act waits for a verdict to land
+  RS_RETAINED,       // E3: the governor drew this cell into the retained stratum: a person decides it, at every rung (F14, O20)
   RS_N
 };
 // THE SWITCH. Read from a file the machine never writes (INTELLECT) or from the
@@ -81,7 +82,7 @@ inline uint32_t alphabet_hash() {
   return (uint32_t)h[0] | ((uint32_t)h[1] << 8) | ((uint32_t)h[2] << 16) | ((uint32_t)h[3] << 24);
 }
 inline const char* reason_name(int r) {
-  static const char* n[] = {"ok","unlicensed","thin-margin","novel-case","irreversible","law","no-adjudication-budget","blocked-by-dep","audit-sample","canary","unsure-placement","unread","switch-off","exposure"};
+  static const char* n[] = {"ok","unlicensed","thin-margin","novel-case","irreversible","law","no-adjudication-budget","blocked-by-dep","audit-sample","canary","unsure-placement","unread","switch-off","exposure","retained"};
   return n[r % RS_N];
 }
 
@@ -97,6 +98,7 @@ struct GateIn {
   bool  blocked;
   bool  in_canary;       // drawn by keyed hash the resident cannot predict
   bool  in_audit;        // the sampled review fraction that never reaches zero
+  bool  to_incumbent;    // E3: the retained stratum: a person decides this cell, at every rung; the machine holds it
   float budget_left;     // adjudication minutes remaining today
   int   sw;              // D2: the switch, folded from the tape; off holds everything
   float value;           // E0: the class value at stake, what an unattended act adds to the outstanding exposure
@@ -110,6 +112,7 @@ struct GateOut { uint8_t verdict; uint8_t reason; };
 inline GateOut gate(const GateIn& g, const Writ& wr) {
   if (g.sw == SW_OFF)                         return { V_HOLD,     RS_SWITCH_OFF };   // D2: off is a hold, and the reason says so
   if (g.blocked)                              return { V_HOLD,     RS_BLOCKED };
+  if (g.to_incumbent)                         return { V_HOLD,     RS_RETAINED };     // E3: the control arm, at every rung: a person decides it
   if (g.warrant_reserved)                     return { V_WARRANT,  RS_IRREVERSIBLE };
   if (g.novelty > 0.97f)                      return { V_WARRANT,  RS_NOVEL };  // outside the population the licence was earned on
   if (g.rung <= 0)                            return { V_DRAFT,    RS_UNLICENSED };

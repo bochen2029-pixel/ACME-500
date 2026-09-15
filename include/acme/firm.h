@@ -97,6 +97,16 @@ struct Writ {
   // this many verdict latencies is written off as UNRESOLVED by the world port:
   // an explicit row, evidence for nothing, its exposure released by that row.
   int   write_off_terms = 3;
+  // E3: THE LADDER v2's RULES, authored (ARCHITECTURE v4 §28). The bar is
+  // frozen per term from at least m_min outcomes of the paired arm at its
+  // upper one-sided bound (bar_z, the 90 percent point); a term with fewer
+  // than m_term outcomes in the process is a term without evidence and the
+  // rung stands; a class whose arrivals move past regime_tol of the previous
+  // term (and past three standard errors) drops to watching.
+  int   m_min      = 200;
+  int   m_term     = 10;
+  float bar_z      = 1.2816f;
+  float regime_tol = 0.20f;
   int   read_budget  = 50000;   // C1: Judge::read calls per period, a dial [BUDGET]: one resident
                                 // card at ~0.6 reads a second over a day-long period. Behind the port a
                                 // read is a forward pass; the field spends them ripest-first on cells

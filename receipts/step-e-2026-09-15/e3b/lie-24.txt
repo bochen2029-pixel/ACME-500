@@ -1,0 +1,41 @@
+
+=== THE ORACLE BATTERY ================================================
+  --lie 24 : oracle 24 is running against a deliberately corrupted mechanism.
+            Its line prints PASS only if it CAUGHT the corruption; a FAIL there is a
+            broken oracle. A healthy lie run therefore exits 0, like the plain battery.
+
+  [PASS] O0a  BLAKE2b-256("abc") matches RFC 7693             
+  [PASS] O0b  tape chain verifies over 500 rows               
+  [PASS] O0c  a single flipped field localises to its row     (localised at row -1)
+  [PASS] O1   same seed produces a byte-identical tape        (168479 rows, memcmp)
+  [PASS] O1b  same seed produces a byte-identical MACHINE arm: tape, chain, licence table (409259 rows; rec same, chain same, licence table same)
+  [PASS] O14  the ledger folds from the tape: cold fold == the live ledger every consumer reads (58367 cells folded from 409259 rows; 0 field diffs; 0 minute diffs; alphabet pin matches)
+  [PASS] O29  every row carries what the v2 table says it carries (409259 rows scanned, 0 shape faults)
+  [PASS] O15  the ladder is a fold of OUTCOME rows: counts rebuilt == live (72 class-bands; 0 count diffs against the live ladder)
+  [PASS] O16  a null judge and a rules judge license nothing, from history or the wager (null judge: top rung 0, 0 LICENSE rows, 0 wager outcomes; rules judge: top rung 0, 0 rows, 0 outcomes)
+  [PASS] O21  the canary draw is independent of the machine's band (chi-square 70.3 on 72 class-band cells against a 99.9% point of 114.9)
+  [PASS] O18  a kill survives: the durable tape reopens, the checkpoint restores, the run continues bit for bit (cut at row 361156 + 17 bytes with checkpoint 59 in flight; restored at day 49, 59630 rows dropped; continued run: 409260 rows, chain verified, 0 fold diffs, rows equal the unkilled run's)
+  [PASS] O30  every EFFECT re-derives from rows: proposal, stratum, folded rung, schema, switch, the gate's own inputs (47628 effects re-derived through the gate: 47628 agree, 0 mismatched, 0 band mismatches, 0 without a proposal)
+  [PASS] O19  off is invisible: no effect, and the incumbent's rows equal a run with no machine (0 effects under off; 288051 incumbent rows against 288051 with no machine, byte-identical)
+  [PASS] O25  the same rows at different wall spacing give identical verdicts: the machine reads the day, never the clock (409259 rows against 409259; 70 TICK rows carry a different wall value; every other byte identical)
+  [PASS] O37  the shared fact: a proposal is carried across a change only on the judge's certificate, re-derivable from rows, and read again where a margin crosses (33 changes of a shared fact; 597 frames moved by it: 597 carried by the certificate, all 0 re-derived from rows, 0 checked against the judge with 0 disagreements; 0 read again, of which 0 changed choice and 0 changed band)
+  [PASS] O38  outstanding exposure never exceeds the writ's cap, an unanswered cell is closed only by a write-off row, and a write-off is evidence for nothing (cap $300k; the fold's outstanding peaked at $300k, 0 rows over the cap; 14754 acts held for exposure; 489 write-offs, each a row; the ladder counted 35 wager outcomes against 35 answered; the live ledger's outstanding equals the fold's)
+  [PASS] O20  the retained stratum never reaches zero: drawn at every rung, decided by a person, never acted on while retained (1496 cells drawn into the control arm at eps_floor 0.03; 1304 decided by a person; 0 acted on by the machine while retained; 4809 incumbent outcomes landed in the live period)
+  [PASS] O31  the ladder v2 leaves a judge inside the null with unearned authority no more of the time than its level (at the exact boundary in a Bernoulli world 183 of 20000 band-terms crossed the first earned rung's threshold, rate 0.0092 against alpha/4 = 0.0125, bound 0.0140; the plant: 3 seeded firms, 114 bands run, the judge on each term's frozen g0 less three points: over the 8965 settled wager cells the process graded, expected good rate 0.3778 from its coins, observed 0.3869, the g0 of their acts' terms 0.5046, so INSIDE the null; 0 ever promoted; 0 of 432 band-terms standing above the test rung, share 0.0000 against alpha 0.05, bound 0.0706; against each band's lowest g0 across terms (mean spread 0.272): 39 bands below it with 0 promoted, 43 above it with 0 promoted)
+  [PASS] O31b the standing share holds under a shared fact that correlates outcomes within its epochs (the shared fact moved; 3 seeded firms, 114 bands run, the judge on each term's frozen g0 less three points: over the 9119 settled wager cells the process graded, expected good rate 0.3667 from its coins, observed 0.3689, the g0 of their acts' terms 0.4832, so INSIDE the null; 0 ever promoted; 0 of 432 band-terms standing above the test rung, share 0.0000 against alpha 0.05, bound 0.0706; against each band's lowest g0 across terms (mean spread 0.275): 40 bands below it with 0 promoted, 43 above it with 0 promoted)
+  [PASS] O45  the ladder v2 is a fold: the bars, both processes and every LICENSE row re-derive from rows (72 class-bands; 0 diffs against the live ladder; 64 LICENSE rows folded, 0 unjustified)
+  [PASS] O59  the regime detector fires on a planted shift of arrivals and stays quiet without one (a 1.6x shift from day 80: 32 REGIME rows, 20 bands dropped to watching; the world without a shift: 0 REGIME rows)
+  [PASS] O2   the gate never authorises outside its licence   (8640 lattice points, 390 reached ACT; pressure never widened; off held every point; an exhausted exposure allowance held every act and moved nothing else; retained held every point)
+  [PASS] O3   out of supervision degrades to HOLD, never to acting 
+  [PASS] O4   transport conserves: rows ship, columns never exceed (max column overshoot 0.00e+00, placed+stock err 1.30e-08)
+  [PASS] O5   a binding capacity has a nonzero price, stocks included (binding seat price 29.6598, unplaced-stock price 28.0206)
+  [PASS] O6   the join graph is read off the application, not asked for (24 of 24 classes, exactly)
+  [PASS] O7   coverage read off the world's verdicts tracks the tacit mass (mean |err| 0.054, corr 0.946 over 19 classes)
+  [PASS] O8   the disagree/firm-failed cell licenses nothing  (2174 cells available, 21611 credited, 21611 agreements)
+  [PASS] O9   the field recovers competence no human in ACME can see (mean within-class corr 0.242 over 9 classes, 209 seat-class pairs)
+  [PASS] O10  kappa demotes a class that costs more than it saves (kappa 2.25 -> rung 1)
+  [PASS] O11  effects carry inverses; the window closes at settlement (60 effects committed and unwound; post-settlement reversal refused)
+  [PASS] O12  the origin-fit cascade promises an impossible company (alpha 0.145 vs 0.197 planted; F 17.6 vs 9.0; gap at E=200 is 9 seats)
+  [PASS] O13  the measured decide fraction ranks the planted intensity (partial Spearman 0.963 over 24 classes, n_systems controlled; the LEVEL is never recovered)
+
+  33 passed, 0 failed   (with oracle 24 lied to: PASS on its line means the lie was caught; FAIL there means it was not)

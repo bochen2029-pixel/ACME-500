@@ -1,0 +1,21 @@
+
+=== O31 · THE LADDER'S FALSE-PROMOTION RATE UNDER A BOUNDARY JUDGE ===
+  5 seeded firms of 500 seats, warm 180, 260 days; every band past the thin band admitted to rung 1 as a test;
+  the judge a delta worse than the bar at its upper bound on the failure side (the ladder v2's null boundary) plus a shift (a judge off the boundary: the lie's dial); alpha_promote 0.0500; the ladder v2 (E3): the bar frozen per term at its upper bound from m_min 200, rungs at alpha 2^-k.
+
+   seed   bands  promoted   outcomes  achieved    target    at end measured band-terms  standing    settled expected observed boundary
+      0      38         1       3012     0.156     0.323     0.308       33         96         0       2573    0.306    0.308    0.443
+      1      38         2       3281     0.175     0.355     0.335       32         96         0       2507    0.303    0.298    0.451
+      2      38         2       3185     0.161     0.327     0.315       33         96         1       2508    0.319    0.324    0.467
+      3      38         0       3022     0.167     0.339     0.324       33         96         0       2374    0.307    0.301    0.440
+      4      38         0       3056     0.172     0.351     0.332       32         96         0       2378    0.319    0.315    0.476
+
+  the judge's position over 12340 settled wager cells (38.9% acted on time): expected good rate 0.3108 from the coins it spent, observed 0.3091, the ladder's frozen g0 for the same cells 0.4553: the judge sits INSIDE the null by 0.144, cell-weighted
+  THE SPLIT BY WHERE THE JUDGE SAT, band by band, against the LOWEST g0 the band ran under (the bar is frozen per term and moves between terms; mean spread of g0 across terms over the measured bands 0.042):
+    inside the null   122 bands (mean gap below the lowest g0 0.111): ever promoted 0, rate 0.0000 (0.0000 to 0.0305) against alpha per term; 244 band-terms, 0 standing: share 0.0000 (0.0000 to 0.0155) against alpha 0.0500
+    above it           35 bands: ever promoted 5, rate 0.1429 (0.0626 to 0.2938): the rule's power on the alternative, where a promotion is true
+
+  bands run 190, ever promoted past the test rung by the wager 5: rate 0.0263 (Wilson 95% 0.0113 to 0.0601) against alpha 0.0500 per term
+  band-terms at the boundaries 480, standing above the test rung 1: share 0.0021 (Wilson 95% 0.0004 to 0.0117) against alpha 0.0500: the time a null band holds authority it did not earn
+  wager outcomes 15556; the judge's achieved good rate 0.166 against the target as used at the coin 0.339 (at the end 0.323; means over bands); the bar measured on 163 of 190 bands
+  the standing share is not shown above alpha at this sample.

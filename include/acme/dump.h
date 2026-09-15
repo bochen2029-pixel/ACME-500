@@ -200,9 +200,11 @@ inline void dump_write(const char* dir, const Tape& tape, const Ledger& L, const
       for (int c = 0; c < lad->NC; ++c) for (int b = 0; b < NBAND; ++b) {
         const Lic& x = lad->at(c, b);
         std::fprintf(o, "%s{\"cls\":%d,\"band\":%d,\"rung\":%d,\"expiry_day\":%d,\"logE\":%.4f,\"n_machine\":%ld,\"good_machine\":%ld,"
-                        "\"n_assisted\":%ld,\"good_assisted\":%ld,\"n_incumbent\":%ld,\"good_incumbent\":%ld,\"n0\":%d,\"history\":%s,\"unlicensable\":%s,\"kappa\":%.4f}",
+                        "\"n_assisted\":%ld,\"good_assisted\":%ld,\"n_incumbent\":%ld,\"good_incumbent\":%ld,\"n0\":%d,\"history\":%s,\"unlicensable\":%s,\"kappa\":%.4f,"
+                        "\"bar\":%.4f,\"bar_n\":%d,\"term_rung\":%d,\"cause\":\"%s\"}",
                      f1 ? "" : ",", c, b, x.rung, x.expiry_day, x.logE, x.n_machine, x.good_machine, x.n_assisted, x.good_assisted,
-                     x.n_incumbent, x.good_incumbent, x.n0, x.history_licensed ? "true" : "false", x.unlicensable ? "true" : "false", x.kappa());
+                     x.n_incumbent, x.good_incumbent, x.n0, x.history_licensed ? "true" : "false", x.unlicensable ? "true" : "false", x.kappa(),
+                     x.bar, x.bar_n, x.term_rung, lic_cause_name(x.cause));
         f1 = false;
       }
       std::fprintf(o, "]");

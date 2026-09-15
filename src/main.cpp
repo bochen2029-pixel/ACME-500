@@ -71,6 +71,9 @@ struct Args {
   float o31_shift = 0.f;         // --shift X: lift the boundary judge's target (the lie's dial; 0 = the boundary)   [E3]
   float judge_comp = -1.f;       // --judge-comp X: a plant judge at a FIXED competence X behind the port (the stub sweep, F-STUB)   [E3]
   bool  test_admit = false;      // --o31's: every band past the thin band admitted to rung 1 as a test, so the wager runs everywhere   [E3]
+  int   m_min = -1;              // --m-min N: the paired arm's outcomes a bar needs before it is measured (the writ's 200 if -1)   [E3]
+  int   shift_day = 0;           // --shift-day D --shift-mult M: a planted shift of the arrival rate from day D (O59's world)   [E3]
+  float shift_mult = 1.f;
 };
 static Args parse(int argc, char** argv) {
   Args a;
@@ -79,11 +82,14 @@ static Args parse(int argc, char** argv) {
     auto next_i = [&](int d) { return (i + 1 < argc) ? atoi(argv[++i]) : d; };
     auto next_f = [&](float d) { return (i + 1 < argc) ? (float)atof(argv[++i]) : d; };
     if (!strncmp(s, "--sim", 5) || !strncmp(s, "--twin", 6) || !strncmp(s, "--automate", 10)
-     || !strncmp(s, "--multiverse", 12) || !strncmp(s, "--selftest", 10) || !strcmp(s, "--o31")) a.mode = s;
+     || !strncmp(s, "--multiverse", 12) || !strncmp(s, "--selftest", 10) || !strcmp(s, "--o31") || !strcmp(s, "--stub-sweep")) a.mode = s;
     else if (!strcmp(s, "--seeds")) a.o31_seeds = next_i(3);
     else if (!strcmp(s, "--at")) a.o31_at = (i + 1 < argc) ? argv[++i] : "g0";
     else if (!strcmp(s, "--shift")) a.o31_shift = next_f(0.f);
     else if (!strcmp(s, "--judge-comp")) a.judge_comp = next_f(-1.f);
+    else if (!strcmp(s, "--m-min")) a.m_min = next_i(-1);
+    else if (!strcmp(s, "--shift-day")) a.shift_day = next_i(0);
+    else if (!strcmp(s, "--shift-mult")) a.shift_mult = next_f(1.f);
     else if (!strcmp(s, "--days")) a.days = next_i(260);
     else if (!strcmp(s, "--warm")) a.warm = next_i(180);
     else if (!strcmp(s, "--futures")) a.futures = next_i(64);
@@ -113,7 +119,11 @@ static Args parse(int argc, char** argv) {
 }
 // E0: the world the args describe: the shared fact and the unanswering rate are
 // the plant's; the exposure cap is the writ's
-static World world_of(const Args& a, uint64_t seed) { return make_world(seed, a.shared, a.flip_rate, a.unresolved); }
+static World world_of(const Args& a, uint64_t seed) {
+  World w = make_world(seed, a.shared, a.flip_rate, a.unresolved);
+  w.shift_day = (uint32_t)std::max(0, a.shift_day); w.shift_mult = a.shift_mult;   // E3: O59's planted shift, off by default
+  return w;
+}
 static double now_s() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
 static void rule(const char* t) { std::printf("\n=== %s ", t); for (int i = (int)strlen(t); i < 66; ++i) std::putchar('='); std::putchar('\n'); }
 
@@ -282,9 +292,9 @@ struct MachineRun {
       human_day(R.w, R.L, R.f, R.tape, R.hs, rep, (uint32_t)d);
       const size_t settled_from = R.tape.size();
       world_settle(R.w, R.L, R.f, R.tape, (uint32_t)d);
-      gov.grade(R.tape, settled_from);                                               // the governor folds the day's OUTCOME rows
+      gov.grade(R.tape, settled_from, R.L);                                          // the governor folds the day's OUTCOME rows (F24: against the act's term's bar)
       res.grade(R.L, *judge, *frontier_judge);                                       // the field learns; the judges are told
-      gov.step(R.L.day, res.sup, R.tape);                                            // the ladder moves, as rows
+      gov.step(R.L, res.sup, R.tape);                                                // the ladder moves, as rows (E3: terms, lapses, the regime detector)
       ++periods;
       dump_snapshot(R.tape, R.L, R.f, (uint32_t)d, &gov.lad, &res.st);
       if (file && ckpt_every > 0 && ((d + 1 - warm) % ckpt_every == 0 || d + 1 == total)) checkpoint((uint32_t)d);
@@ -309,6 +319,7 @@ static AutoOut run_machine(const Args& a, Run& R, int warm_days, int total_days,
                            Judge* judge_override = nullptr, Judge* frontier_override = nullptr) {
   MachineRun M(a, R, warm_days, total_days);
   if (a.budget > 0) R.f.writ.read_budget = a.budget;
+  if (a.m_min > 0) R.f.writ.m_min = a.m_min;                // E3: the bar's sample floor, authored
   if (a.tape) {                                             // D1: the durable tape sees every row from the header on
     M.tape_dir = a.tape; M.ckpt_every = a.ckpt_every;
     M.file.reset(new TapeFile()); uint8_t genesis[32] = {0};
@@ -324,7 +335,11 @@ static AutoOut run_machine(const Args& a, Run& R, int warm_days, int total_days,
   M.make_judges(judge_override, frontier_override);
   M.res.init(R.w.NC, R.f.size(), M.C, R.f.writ, a.seed);
   M.gov.init(R.w.NC, R.f.writ, M.C.arrivals_per_day, alphabet_hash(), M.judge->hash(), M.C.template_hash);
+  M.gov.seed_history(R.tape);                                // E3: the shadow record: the incumbent's outcomes before the machine, per band
+  g_boundary_ladder = &M.gov.lad;                            // E3: O31's judge may read the frozen bars for this run's duration (the instrument's side)
   M.gov.lie_band_dependent = (a.lie == 19);
+  M.gov.lie_regime_deaf = (a.lie == 30);                     // O59's lie
+  M.res.lie_stratum_off = (a.lie == 26);                     // O20's lie
   M.res.lie_reads_clock = (a.lie == 23);                     // O25's lie
   M.res.lie_effect_under_off = (a.lie == 22);                // O19's lie
   M.res.lie_silent_proposal = (a.lie == 21);                 // O30's lie
@@ -339,13 +354,15 @@ static AutoOut run_machine(const Args& a, Run& R, int warm_days, int total_days,
   for (int c = 0; c < R.w.NC; ++c) M.C.coverage[c] = M.RP.coverage[c];
   M.res.C.coverage = M.C.coverage;                          // the resident reads with the measured coverage from here on
   M.hist_licensed = M.gov.license_from_history(M.RP, (uint32_t)warm_days, R.tape);
-  if (a.test_admit) M.gov.admit_all_for_test((uint32_t)warm_days, R.tape);   // E3: O31's harness; never outside --o31
+  if (a.test_admit) M.gov.admit_all_for_test((uint32_t)warm_days, R.tape);   // E3: O31's harness; never outside --o31 and the battery
+  M.gov.open_term((uint32_t)warm_days, R.tape);              // E3: the first term opens: the bars freeze from the shadow record
 
   // ---- PHASE 4+: live. Both the remaining humans and the resident, on one world.
   t0 = now_s();
   M.loop(warm_days);
   AutoOut out = M.finish(t0);
   if (M.file) { R.tape.sink = nullptr; M.file->close(); }
+  g_boundary_ladder = nullptr;                               // the run is over; the governor's ladder goes with it
   (void)verbose;
   return out;
 }
@@ -461,8 +478,10 @@ static int cmd_automate(const Args& a) {
   std::printf("  n_act is the WAGER (unattended acts, the only outcomes that widen a licence);\n"
               "  n_asst is drafts a person keyed and warrants a signer executed, graded but never fed.\n"
               "  good_h is the firm's own rate in the SAME band, which the e-process is paired against.\n\n");
-  std::printf("  %-22s %4s  %5s %6s %6s %5s   %7s %7s %7s %6s  %s\n",
-              "class", "band", "rung", "n_act", "n_asst", "n0", "good_a", "good_s", "good_h", "kappa", "state");
+  std::printf("  E3: bar is the paired arm's rate in the band frozen for the term at its upper bound (0 = fewer than m_min %d outcomes);\n"
+              "  logE is the term's evidence against g0 = 1 - (1 - bar)(1 + delta); the cause names how the rung was last moved.\n\n", R.f.writ.m_min);
+  std::printf("  %-22s %4s  %5s %6s %6s %5s   %7s %7s %7s %6s  %5s %6s  %s\n",
+              "class", "band", "rung", "n_act", "n_asst", "n0", "good_a", "good_s", "good_h", "kappa", "bar", "logE", "cause");
   int licensed_bands = 0, unlicensable = 0;
   for (int c = 0; c < R.w.NC; ++c) for (int b = NBAND - 1; b >= 1; --b) {
     const Lic& L = A.lad.at(c, b);
@@ -470,18 +489,19 @@ static int cmd_automate(const Args& a) {
     if (L.unlicensable) ++unlicensable;
     if (L.n_machine + L.n_assisted < 30 && L.rung == 0) continue;
     if ((c % 5) || b != 2) continue;
-    std::printf("  %-22s %4d  %5d %6ld %6ld %5d   %7.3f %7.3f %7.3f %6.2f  %s\n", cls_spec(c).name, b, L.rung,
+    std::printf("  %-22s %4d  %5d %6ld %6ld %5d   %7.3f %7.3f %7.3f %6.2f  %5.2f %6.2f  %s\n", cls_spec(c).name, b, L.rung,
                 L.n_machine, L.n_assisted, L.n0,
                 L.n_machine ? (double)L.good_machine / L.n_machine : 0.0,
                 L.n_assisted ? (double)L.good_assisted / L.n_assisted : 0.0,
                 L.n_incumbent ? (double)L.good_incumbent / L.n_incumbent : 0.0,
-                L.kappa(), L.history_licensed ? "history-admitted" : "wager only");
+                L.kappa(), L.bar, L.logE, lic_cause_name(L.cause));
   }
   std::printf("\n  %d class-bands past rung 0.  %d bands are UNLICENSABLE at any tolerable canary\n"
               "  rate: n0 is not a constant, it is n0(p, delta), so the rarest-failure classes\n"
               "  are the SLOWEST to license. The honest account prints them as human rather\n"
               "  than holding them in shadow forever.\n", licensed_bands, unlicensable);
   print_binding_reasons(A.lad, R.f.writ, (uint32_t)(a.days - 1));
+  print_retained(R.tape, R.w.NC, (uint32_t)a.warm);            // E3: the control arm, per class (O20's reading)
 
   rule("PHASE 5 · WHAT THE RESIDENT DID");
   std::printf("  acted unattended %llu   drafted for a person %llu   rented a frontier mind %llu\n"
@@ -741,43 +761,175 @@ static int cmd_multiverse(const Args& a) {
 // the achieved good rate per band beside its target, so the distance from the
 // boundary is a reading and not an assumption.
 // ----------------------------------------------------------------------------
+// one seeded firm under the boundary judge: the bands the wager ran on, the ones
+// a LICENSE row by the wager ever took past the test rung, and the judge's
+// achieved rate against the target it aimed at when each coin was spent
+// Two statistics: `promoted` counts the bands a LICENSE row by the wager EVER
+// took past the test rung; `standing` counts, at every term boundary after the
+// warm history, the admitted bands standing above the test rung, over all such
+// band-terms. Under the ladder v2 a false promotion lapses at the end of the
+// next term, so the standing share is the share of time a null band spends
+// with authority it did not earn, and that is what the level bounds; the rule
+// as built never lapsed inside three terms, which the same statistic shows.
+// `expected` is the judge's TRUE position: over the settled wager cells, the sum
+// of the coin it spent on each (its probability of a correct choice, or zero
+// where the act was late), against `observed`, the good outcomes among them;
+// the two agree within binomial noise when the mechanism is what it says, and
+// the gap between `expected` and `target` is the placement error of the
+// late-share estimate. `boundary` is the null's edge for the same cells with no
+// shift, so "inside the null" is a reading: expected <= boundary.
+// The null's edge is per band: the ladder's frozen g0. The judge's coins scatter
+// a few points either side of it band by band, and a band where the coins sat
+// above g0 is in the writ's alternative, where a promotion is a true positive.
+// So the bands are split by where the judge demonstrably sat (its expected
+// good rate from the coins it spent, against the band's g0): the level bounds
+// the null side; the alternative side is the rule's power, printed beside it.
+struct O31Trial { long bands = 0, promoted = 0, outcomes = 0, band_terms = 0, standing = 0; double achieved = 0, target = 0, at_end = 0; int measured = 0; bool saw_shared = false;
+                  long settled = 0, on_time = 0; double expected = 0, observed = 0, boundary = 0;
+                  long null_bands = 0, null_promoted = 0, null_band_terms = 0, null_standing = 0, alt_bands = 0, alt_promoted = 0; double null_gap = 0, g0_spread = 0; };
+static O31Trial o31_trial(const Args& a, uint64_t seed, int at, float shift) {
+  Run R; R.f = build_acme(a.n, a.span, seed); R.w = world_of(a, seed); R.w.demand_scale = a.demand; R.f.writ.exposure_cap = a.exposure_cap;
+  Args aa = a; aa.seed = seed; aa.test_admit = true; aa.lie = -1;
+  BoundaryJudge bj(&R.w, &R.L, &R.f.writ, at, R.f.writ.canary_delta, 0.75f, shift);
+  const AutoOut o = run_machine(aa, R, a.warm, a.days, false, &bj, &bj);
+  const int NC = R.w.NC, term = o.lad.term_days;
+  O31Trial t; t.saw_shared = o.ms.shared_events > 0;
+  // 1. the judge's true position, from the coin it spent on each settled wager
+  //    cell THE PROCESS GRADED: the cell's act fell in a term whose bar was
+  //    measured, and the boundary is that term's g0 (F24), like for like
+  std::vector<double> exp_b((size_t)NC * NBAND, 0.0); std::vector<long> n_b((size_t)NC * NBAND, 0);
+  for (const Obligation& ob : R.L.ob) {
+    if (!(ob.by_machine && (ob.via == 1 || ob.via == 3) && ob.state == OB_SETTLED && ob.outcome != OK_UNRESOLVED && ob.cls < NC && ob.band >= 1)) continue;
+    const float pc = ob.id < bj.pc_used.size() ? bj.pc_used[ob.id] : -1.f;
+    if (pc < 0.f) continue;
+    const int ti = o.lad.term_index_of(ob.day_decided);
+    const size_t k = (size_t)ob.cls * NBAND + (ob.band < NBAND ? ob.band : NBAND - 1);
+    if (ti < 0) continue;
+    const double g0c = o.lad.hist_g0[k * Ladder::MAXT + (size_t)ti];
+    if (g0c <= 0.0) continue;                                              // no bar in the act's term: the process never saw this cell
+    const bool on_time = ob.day_decided <= ob.day_due;
+    ++t.settled; if (on_time) ++t.on_time;
+    t.expected += on_time ? (double)pc : 0.0; exp_b[k] += on_time ? (double)pc : 0.0; ++n_b[k];
+    t.observed += (ob.outcome == OK_GOOD) ? 1.0 : 0.0;
+    t.boundary += g0c;
+  }
+  // the null side is judged against the LOWEST boundary the band ever ran under:
+  // the bar is frozen per term and moves between terms, and a term's process is
+  // a null instance only if the judge sat at or below THAT term's g0
+  std::vector<int8_t> side((size_t)NC * NBAND, 0);                      // -1 the null side · +1 the alternative · 0 unmeasured
+  long spread_n = 0;
+  for (int c = 0; c < NC; ++c) for (int b = 1; b < NBAND; ++b) {
+    const size_t k = (size_t)c * NBAND + b; const Lic& L = o.lad.at(c, b);
+    if (L.g0_min <= 1.0) { t.g0_spread += L.g0_max - L.g0_min; ++spread_n; }
+    if (n_b[k] < 1 || L.g0_min > 1.0) continue;
+    const double pos = exp_b[k] / (double)n_b[k];
+    side[k] = (pos <= L.g0_min) ? -1 : 1;
+    if (side[k] < 0) t.null_gap += L.g0_min - pos;
+  }
+  if (spread_n) t.g0_spread /= (double)spread_n;                          // the mean spread of g0 across terms, over the measured bands
+  // 2. the promotions and the standing, from the rows
+  std::vector<uint8_t> hit((size_t)NC * NBAND, 0), admitted((size_t)NC * NBAND, 0);
+  std::vector<int> rung((size_t)NC * NBAND, 0);
+  for (const Rec& r : R.tape.rec) {
+    if (r.type == R_LICENSE && r.cls < NC) {
+      const size_t k = (size_t)r.cls * NBAND + (r.b % NBAND);
+      rung[k] = r.a;
+      if (r.via == LC_TEST || r.via == LC_HISTORY) admitted[k] = 1;
+      if (r.a >= 2 && r.via == LC_WAGER) hit[k] = 1;
+    }
+    // the close of a boundary day: the rungs standing after that day's step
+    if (r.type == R_TICK && r.a > 0 && (uint32_t)(r.a - 1) > (uint32_t)a.warm && Ladder::term_boundary((uint32_t)(r.a - 1), term))
+      for (size_t k = 0; k < rung.size(); ++k) if (admitted[k] && (k % NBAND) >= 1) {
+        ++t.band_terms; if (rung[k] >= 2) ++t.standing;
+        if (side[k] < 0) { ++t.null_band_terms; if (rung[k] >= 2) ++t.null_standing; }
+      }
+  }
+  for (int c = 0; c < NC; ++c) for (int b = 1; b < NBAND; ++b) {
+    const Lic& L = o.lad.at(c, b); const size_t k = (size_t)c * NBAND + b;
+    if (L.n_machine < 1) continue;
+    ++t.bands; t.outcomes += L.n_machine; if (hit[k]) ++t.promoted;
+    t.achieved += (double)L.good_machine / (double)L.n_machine; t.target += bj.target_used(k); t.at_end += bj.target[k];
+    if (L.bar > 0.0) ++t.measured;
+    if (side[k] < 0) { ++t.null_bands; if (hit[k]) ++t.null_promoted; }
+    else if (side[k] > 0) { ++t.alt_bands; if (hit[k]) ++t.alt_promoted; }
+  }
+  return t;
+}
 static int cmd_o31(const Args& a) {
   rule("O31 · THE LADDER'S FALSE-PROMOTION RATE UNDER A BOUNDARY JUDGE");
-  const int at = !strcmp(a.o31_at, "bar") ? BJ_AT_BAR : BJ_AT_G0;
+  const int at = !strcmp(a.o31_at, "bar") ? BJ_AT_BAR : !strcmp(a.o31_at, "g0u") ? BJ_AT_G0U : BJ_AT_G0;
   std::printf("  %d seeded firms of %d seats, warm %d, %d days; every band past the thin band admitted to rung 1 as a test;\n"
-              "  the judge %s%s; alpha_promote %.4f; the ladder as %s.\n",
+              "  the judge %s%s; alpha_promote %.4f; the ladder v2 (E3): the bar frozen per term at its upper bound from m_min %d, rungs at alpha 2^-k.\n",
               a.o31_seeds, a.n, a.warm, a.days,
-              at == BJ_AT_BAR ? "at the incumbent's own rate in the band (the plug-in the rule reads)" : "a delta worse than the incumbent on the failure side, g0 = 1 - (1 - gbar)(1 + delta)",
-              a.o31_shift != 0.f ? " plus a shift (a judge off the boundary: the lie's dial)" : "", 1.0 / 20.0, "built");
-  long trials = 0, promoted = 0, outcomes = 0; double ach_sum = 0, tgt_sum = 0, end_sum = 0; int bars_measured = 0;
-  std::printf("\n  %5s %7s %9s %10s %9s %9s %9s %8s\n", "seed", "bands", "promoted", "outcomes", "achieved", "target", "at end", "measured");
+              at == BJ_AT_BAR ? "at the incumbent's own rate in the band (the plug-in the rule as built read)"
+              : at == BJ_AT_G0U ? "a delta worse than the bar at its upper bound on the failure side (the ladder v2's null boundary)"
+              : "a delta worse than the incumbent's plug-in rate on the failure side",
+              a.o31_shift != 0.f ? " plus a shift (a judge off the boundary: the lie's dial)" : "", 1.0 / 20.0, a.m_min > 0 ? a.m_min : Writ().m_min);
+  long trials = 0, promoted = 0, outcomes = 0, band_terms = 0, standing = 0; double ach_sum = 0, tgt_sum = 0, end_sum = 0; int bars_measured = 0;
+  long settled = 0, on_time = 0; double expected = 0, observed = 0, boundary = 0;
+  long nb = 0, np = 0, nbt = 0, ns = 0, ab = 0, ap = 0; double ngap = 0, gspread = 0;
+  auto wilson = [](long k, long n, double& lo, double& hi) {
+    const double z = 1.96, nn = (double)std::max(1L, n), p = n ? (double)k / (double)n : 0.0;
+    const double centre = (p + z * z / (2 * nn)) / (1 + z * z / nn);
+    const double half = z * std::sqrt(p * (1 - p) / nn + z * z / (4 * nn * nn)) / (1 + z * z / nn);
+    lo = std::max(0.0, centre - half); hi = std::min(1.0, centre + half); return p; };
+  std::printf("\n  %5s %7s %9s %10s %9s %9s %9s %8s %10s %9s   %8s %8s %8s %8s\n", "seed", "bands", "promoted", "outcomes", "achieved", "target", "at end", "measured", "band-terms", "standing", "settled", "expected", "observed", "boundary");
   for (int s = 0; s < a.o31_seeds; ++s) {
     const uint64_t seed = a.seed ^ (0x9E3779B9ULL * (uint64_t)(s + 1));
-    Run R; R.f = build_acme(a.n, a.span, seed); R.w = world_of(a, seed); R.w.demand_scale = a.demand; R.f.writ.exposure_cap = a.exposure_cap;
-    Args aa = a; aa.seed = seed; aa.test_admit = true; aa.lie = -1;
-    BoundaryJudge bj(&R.w, &R.L, &R.f.writ, at, R.f.writ.canary_delta, 0.75f, a.o31_shift);
-    const AutoOut o = run_machine(aa, R, a.warm, a.days, false, &bj, &bj);
-    long t = 0, p = 0, n = 0; double ach = 0, tgt = 0, endt = 0; int meas = 0;
-    for (int c = 0; c < R.w.NC; ++c) for (int b = 1; b < NBAND; ++b) {
-      const Lic& L = o.lad.at(c, b);
-      if (L.n_machine < 1) continue;
-      ++t; n += L.n_machine; if (L.rung >= 2) ++p;
-      ach += (double)L.good_machine / (double)L.n_machine; tgt += bj.target_used((size_t)c * NBAND + b); endt += bj.target[(size_t)c * NBAND + b];
-      if (L.n_incumbent >= 12) ++meas;
-    }
-    std::printf("  %5d %7ld %9ld %10ld %9.3f %9.3f %9.3f %8d\n", s, t, p, n, t ? ach / t : 0.0, t ? tgt / t : 0.0, t ? endt / t : 0.0, meas);
-    trials += t; promoted += p; outcomes += n; ach_sum += ach; tgt_sum += tgt; end_sum += endt; bars_measured += meas;
+    const O31Trial t = o31_trial(a, seed, at, a.o31_shift);
+    std::printf("  %5d %7ld %9ld %10ld %9.3f %9.3f %9.3f %8d %10ld %9ld   %8ld %8.3f %8.3f %8.3f\n", s, t.bands, t.promoted, t.outcomes,
+                t.bands ? t.achieved / t.bands : 0.0, t.bands ? t.target / t.bands : 0.0, t.bands ? t.at_end / t.bands : 0.0, t.measured, t.band_terms, t.standing,
+                t.settled, t.settled ? t.expected / t.settled : 0.0, t.settled ? t.observed / t.settled : 0.0, t.settled ? t.boundary / t.settled : 0.0);
+    trials += t.bands; promoted += t.promoted; outcomes += t.outcomes; ach_sum += t.achieved; tgt_sum += t.target; end_sum += t.at_end; bars_measured += t.measured;
+    band_terms += t.band_terms; standing += t.standing; settled += t.settled; on_time += t.on_time; expected += t.expected; observed += t.observed; boundary += t.boundary;
+    nb += t.null_bands; np += t.null_promoted; nbt += t.null_band_terms; ns += t.null_standing; ab += t.alt_bands; ap += t.alt_promoted; ngap += t.null_gap; gspread += t.g0_spread / (double)a.o31_seeds;
   }
-  const double rate = trials ? (double)promoted / (double)trials : 0.0;
-  const double z = 1.96, nn = (double)std::max(1L, trials);
-  const double centre = (rate + z * z / (2 * nn)) / (1 + z * z / nn);
-  const double half = z * std::sqrt(rate * (1 - rate) / nn + z * z / (4 * nn * nn)) / (1 + z * z / nn);
-  std::printf("\n  bands run %ld, promoted past the test rung %ld: rate %.4f (Wilson 95%% %.4f to %.4f) against alpha %.4f\n",
-              trials, promoted, rate, std::max(0.0, centre - half), std::min(1.0, centre + half), 1.0 / 20.0);
+  std::printf("\n  the judge's position over %ld settled wager cells (%.1f%% acted on time): expected good rate %.4f from the coins it spent, observed %.4f, the ladder's frozen g0 for the same cells %.4f: the judge sits %s the null by %.3f, cell-weighted\n",
+              settled, settled ? 100.0 * on_time / settled : 0.0, settled ? expected / settled : 0.0, settled ? observed / settled : 0.0, settled ? boundary / settled : 0.0,
+              (settled && expected <= boundary) ? "INSIDE" : "OUTSIDE", settled ? std::fabs(expected - boundary) / settled : 0.0);
+  {
+    double nlo, nhi, slo, shi, alo, ahi;
+    const double nrate = wilson(np, nb, nlo, nhi), nstand = wilson(ns, nbt, slo, shi), arate = wilson(ap, ab, alo, ahi);
+    std::printf("  THE SPLIT BY WHERE THE JUDGE SAT, band by band, against the LOWEST g0 the band ran under (the bar is frozen per term and moves between terms; mean spread of g0 across terms over the measured bands %.3f):\n"
+                "    inside the null  %4ld bands (mean gap below the lowest g0 %.3f): ever promoted %ld, rate %.4f (%.4f to %.4f) against alpha per term; %ld band-terms, %ld standing: share %.4f (%.4f to %.4f) against alpha %.4f\n"
+                "    above it         %4ld bands: ever promoted %ld, rate %.4f (%.4f to %.4f): the rule's power on the alternative, where a promotion is true\n",
+                gspread, nb, nb ? ngap / nb : 0.0, np, nrate, nlo, nhi, nbt, ns, nstand, slo, shi, 1.0 / 20.0, ab, ap, arate, alo, ahi);
+  }
+  double lo1, hi1, lo2, hi2;
+  const double rate = wilson(promoted, trials, lo1, hi1);
+  const double stand = wilson(standing, band_terms, lo2, hi2);
+  std::printf("\n  bands run %ld, ever promoted past the test rung by the wager %ld: rate %.4f (Wilson 95%% %.4f to %.4f) against alpha %.4f per term\n",
+              trials, promoted, rate, lo1, hi1, 1.0 / 20.0);
+  std::printf("  band-terms at the boundaries %ld, standing above the test rung %ld: share %.4f (Wilson 95%% %.4f to %.4f) against alpha %.4f: the time a null band holds authority it did not earn\n",
+              band_terms, standing, stand, lo2, hi2, 1.0 / 20.0);
   std::printf("  wager outcomes %ld; the judge's achieved good rate %.3f against the target as used at the coin %.3f (at the end %.3f; means over bands); the bar measured on %d of %ld bands\n",
               outcomes, trials ? ach_sum / trials : 0.0, trials ? tgt_sum / trials : 0.0, trials ? end_sum / trials : 0.0, bars_measured, trials);
-  std::printf("  %s\n", (centre - half) > 1.0 / 20.0 ? "THE RATE IS ABOVE ALPHA: the rule promotes a judge no better than its null more often than it says (F23)."
-                                                     : "the rate is not shown above alpha at this sample.");
+  std::printf("  %s\n", lo2 > 1.0 / 20.0 ? "THE STANDING SHARE IS ABOVE ALPHA: the rule leaves a judge no better than its null with unearned authority more of the time than it says (F23)."
+                                        : "the standing share is not shown above alpha at this sample.");
+  return 0;
+}
+
+// E3: the stub sweep (F-STUB). The plant judge at fixed competences behind the
+// port; licensed decision mass must be smooth and monotone in the competence,
+// or the loop overfit its stub. Each point is one --automate at the args.
+static int cmd_stub_sweep(const Args& a) {
+  rule("F-STUB · LICENSED MASS ACROSS THE STUB JUDGE'S COMPETENCE");
+  const float comps[] = { 0.40f, 0.55f, 0.70f, 0.85f, 0.96f };
+  std::printf("  %d seats, warm %d, %d days, seed %llu; the judge at a fixed competence, never learning\n\n", a.n, a.warm, a.days, (unsigned long long)a.seed);
+  std::printf("  %10s %14s %10s %10s %8s %10s %8s\n", "competence", "licensed mass", "past r0", "wager n", "kappa", "good_a", "acted");
+  double prev = -1.0; bool monotone = true;
+  for (float comp : comps) {
+    Run R; R.f = build_acme(a.n, a.span, a.seed); R.w = world_of(a, a.seed); R.w.demand_scale = a.demand; R.f.writ.exposure_cap = a.exposure_cap;
+    Args aa = a; aa.judge_comp = comp; aa.lie = -1;
+    const AutoOut o = run_machine(aa, R, a.warm, a.days, false);
+    const double T = o.res.total > 0 ? o.res.total : 1e-9;
+    long past = 0, n = 0, g = 0; for (const Lic& L : o.lad.lic) { if (L.rung > 0) ++past; n += L.n_machine; g += L.good_machine; }
+    const double lm = o.res.licensed / T;
+    if (prev >= 0 && lm < prev - 0.02) monotone = false;
+    prev = lm;
+    std::printf("  %10.2f %13.1f%% %10ld %10ld %8.3f %10.3f %8llu\n", comp, 100.0 * lm, past, n, o.ms.kappa(), n ? (double)g / n : 0.0, (unsigned long long)o.ms.acted);
+  }
+  std::printf("\n  licensed mass %s in the competence (within 2 points).\n", monotone ? "is monotone" : "is NOT monotone");
   return 0;
 }
 
@@ -791,7 +943,7 @@ static void ck(bool ok, const char* name, const char* detail = "") {
 
 static int cmd_selftest(const Args& a) {
   rule("THE ORACLE BATTERY");
-  char buf[300];
+  char buf[1200];
   const int LIE = a.lie;
   if (LIE >= 0) std::printf("  --lie %d : oracle %d is running against a deliberately corrupted mechanism.\n"
                             "            Its line prints PASS only if it CAUGHT the corruption; a FAIL there is a\n"
@@ -829,7 +981,10 @@ static int cmd_selftest(const Args& a) {
   // follows needs this baseline. Two runs, one seed: the tape, the chain and
   // the licence table must all be byte-identical.
   {
-    Args aa = a; aa.n = 200; aa.span = 7; aa.seed = 7; aa.warm = 40; aa.days = 70; aa.demand = 1.5f; aa.lie = -1;
+    // E3: the battery's writ sets the bar's sample floor to 40: a 40-day warm
+    // history at 200 seats has few bands with 200 incumbent outcomes, and the
+    // ladder v2 must be exercised, not idle; the 500-seat receipts use the writ's 200
+    Args aa = a; aa.n = 200; aa.span = 7; aa.seed = 7; aa.warm = 40; aa.days = 70; aa.demand = 1.5f; aa.lie = -1; aa.m_min = 40;
     Run A; A.f = build_acme(200, 7, 7); A.w = make_world(7); A.w.demand_scale = 1.5f;
     Run B; B.f = build_acme(200, 7, 7); B.w = make_world(7); B.w.demand_scale = 1.5f;
     const AutoOut oa = run_machine(aa, A, aa.warm, aa.days, false);
@@ -848,7 +1003,8 @@ static int cmd_selftest(const Args& a) {
       same_lad = x.rung == y.rung && x.expiry_day == y.expiry_day && x.logE == y.logE && x.logE_demote == y.logE_demote
               && x.n_machine == y.n_machine && x.n_incumbent == y.n_incumbent && x.n_assisted == y.n_assisted
               && x.good_machine == y.good_machine && x.good_incumbent == y.good_incumbent && x.good_assisted == y.good_assisted
-              && x.history_licensed == y.history_licensed && x.unlicensable == y.unlicensable && x.n0 == y.n0;
+              && x.history_licensed == y.history_licensed && x.unlicensable == y.unlicensable && x.n0 == y.n0
+              && x.bar == y.bar && x.bar_n == y.bar_n && x.term_rung == y.term_rung && x.n_term == y.n_term && x.cause == y.cause;   // E3
     }
     const bool same = same_rec && same_chain && same_lad;
     snprintf(buf, sizeof buf, "(%zu rows; rec %s, chain %s, licence table %s)", A.tape.size(),
@@ -897,8 +1053,10 @@ static int cmd_selftest(const Args& a) {
           case R_EFFECT:   if (r.seat != -1 || r.arm != ARM_MACHINE || r.prov != PROV_M || r.via < 1 || r.via > 4) shape_fail(r, "via"); break;
           case R_OUTCOME:  if (r.seat == -2 || r.a < OK_GOOD || r.a > OK_UNRESOLVED || r.b != r.via || (r.arm == ARM_MACHINE) != (r.seat == -1)) shape_fail(r, "decider/kind/via"); break;
           case R_SENSE:    if (r.seat != -1 || r.arm != ARM_MACHINE || r.prov != PROV_M) shape_fail(r, "writer"); break;
-          case R_LICENSE: case R_KAPPA: if (r.seat != -3 || r.arm != ARM_GOVERNOR) shape_fail(r, "governor"); break;
-          case R_STRATUM:  if (r.seat != -3 || r.arm != ARM_GOVERNOR || r.a < 0 || r.a > 3 || r.oid == 0) shape_fail(r, "stratum"); break;
+          case R_LICENSE:  if (r.seat != -3 || r.arm != ARM_GOVERNOR || r.via >= LC_N || r.a < 0 || r.a > 5) shape_fail(r, "governor/cause/rung"); break;   // E3: the cause on via
+          case R_KAPPA:    if (r.seat != -3 || r.arm != ARM_GOVERNOR) shape_fail(r, "governor"); break;
+          case R_REGIME:   if (r.seat != -3 || r.arm != ARM_GOVERNOR || r.a != 1 || r.b < 0 || r.value <= 0.f) shape_fail(r, "regime"); break;   // E3
+          case R_STRATUM:  if (r.seat != -3 || r.arm != ARM_GOVERNOR || r.a < 0 || r.a > 3 || r.oid == 0 || r.margin < 0.f) shape_fail(r, "stratum"); break;
           default: break;
         }
         ++n;
@@ -912,7 +1070,7 @@ static int cmd_selftest(const Args& a) {
     //          rows alone, from the resident's first period, must equal the live
     //          ladder's. The lie is an outcome counted twice.
     {
-      Ladder LF = fold_ladder(A.tape, A.w.NC, (uint32_t)aa.warm);
+      Ladder LF = fold_ladder(A.tape, A.w.NC, 0);                           // E3: from day 0, the shadow record included
       if (LIE == 16) LF.at(0, 2).n_machine += 1;                            // THE LIE
       const long bad = ladder_diff(LF, oa.lad);
       snprintf(buf, sizeof buf, "(%zu class-bands; %ld count diffs against the live ladder)", LF.lic.size(), bad);
@@ -959,19 +1117,20 @@ static int cmd_selftest(const Args& a) {
       // draw cannot have seen the band the proposal then landed in. The canary
       // probability of that trial is (1 - audit rate) x canary rate, audit taking
       // precedence, both rates on the STRATUM row the governor wrote.
-      struct Drawn { uint32_t day = 0; uint8_t kind = 0; float rc = 0.f, ra = 0.f; bool valid = false; };
+      struct Drawn { uint32_t day = 0; uint8_t kind = 0; float rc = 0.f, ra = 0.f, rr = 0.f; bool valid = false; };
       std::vector<Drawn> drawn; std::vector<uint8_t> counted;
       std::vector<double> O((size_t)NCc * NBAND, 0.0), E((size_t)NCc * NBAND, 0.0), Ncell((size_t)NCc * NBAND, 0.0);
       for (const Rec& r : Cc.tape.rec) {
         if (r.oid == 0) continue;
         if (r.oid >= drawn.size()) { drawn.resize((size_t)r.oid + 1024, Drawn{}); counted.resize((size_t)r.oid + 1024, 0); }
-        if (r.type == R_STRATUM) { Drawn& d = drawn[r.oid]; d.day = r.day; d.kind = (uint8_t)r.a; d.rc = (float)r.b * 1e-6f; d.ra = r.value; d.valid = true; }
+        if (r.type == R_STRATUM) { Drawn& d = drawn[r.oid]; d.day = r.day; d.kind = (uint8_t)r.a; d.rc = (float)r.b * 1e-6f; d.ra = r.value; d.rr = r.margin; d.valid = true; }
         if (r.type == R_PROPOSAL && !counted[r.oid] && r.cls < NCc) {
           counted[r.oid] = 1;
           const Drawn& d = drawn[r.oid];
           if (!d.valid || d.day > r.day) continue;                // D0: the draw in force stands from its row until the next
           const size_t k = (size_t)r.cls * NBAND + r.band;
-          Ncell[k] += 1.0; E[k] += (1.0 - (double)d.ra) * (double)d.rc; if (d.kind == 1) O[k] += 1.0;
+          // E3: retained is drawn first, then audit, then canary: P(canary) = (1 - retained)(1 - audit) x canary, all three rates on the row
+          Ncell[k] += 1.0; E[k] += (1.0 - (double)d.rr) * (1.0 - (double)d.ra) * (double)d.rc; if (d.kind == 1) O[k] += 1.0;
         }
       }
       double chi2 = 0; int df = 0;
@@ -1078,7 +1237,7 @@ static int cmd_selftest(const Args& a) {
           g.reversible = cls_spec(r.cls).reversible; g.warrant_reserved = cls_spec(r.cls).warrant;
           g.blocked = o && o->dep >= 0 && F.ob[o->dep].state != OB_SETTLED && F.ob[o->dep].state != OB_DECIDED;
           const int stratum = F.stratum_of(r.oid);
-          g.in_canary = (stratum == 1); g.in_audit = (stratum == 2);
+          g.in_canary = (stratum == 1); g.in_audit = (stratum == 2); g.to_incumbent = (stratum == 3);   // E3: the retained stratum from the row
           g.budget_left = 1e9f;                                // an effect exists, so the budget was there
           g.sw = F.sw; g.value = cls_spec(r.cls).value; g.exposure_left = 1e30f;   // and the exposure
           g.sw = F.sw;
@@ -1215,6 +1374,157 @@ static int cmd_selftest(const Args& a) {
       (void)effects_wager;
       ck(LIE == 25 ? !ok : ok, "O38  outstanding exposure never exceeds the writ's cap, an unanswered cell is closed only by a write-off row, and a write-off is evidence for nothing", buf);
     }
+    // --- O20: THE RETAINED STRATUM NEVER REACHES ZERO (E3, F14). From the rows:
+    //          the cells the governor drew into the control arm, the persons'
+    //          decisions on them, and no EFFECT on a cell while it stands
+    //          retained. The lie: a resident that acts on the wide band's
+    //          retained cells (the control arm of the band that licenses first
+    //          switched off).
+    {
+      Run S20; S20.f = build_acme(200, 7, 7); S20.w = make_world(7); S20.w.demand_scale = 1.5f;
+      if (LIE == 26) { Args a20 = aa; a20.lie = 26; const AutoOut o20 = run_machine(a20, S20, a20.warm, a20.days, false); (void)o20; }
+      const Tape& T = (LIE == 26) ? S20.tape : A.tape;
+      std::vector<uint8_t> kind, was; long drawn = 0, acted_retained = 0, person_decided = 0, live_inc = 0;
+      for (const Rec& r : T.rec) {
+        if (r.type == R_OUTCOME && r.via == 0 && r.day >= (uint32_t)aa.warm && r.a != OK_UNRESOLVED) ++live_inc;
+        if (r.oid == 0) continue;
+        if (r.oid >= kind.size()) { kind.resize((size_t)r.oid + 1024, 0); was.resize((size_t)r.oid + 1024, 0); }
+        if (r.type == R_STRATUM) { kind[r.oid] = (uint8_t)r.a; if (r.a == 3 && !was[r.oid]) { was[r.oid] = 1; ++drawn; } }
+        if (r.type == R_EFFECT && !(r.flags & RF_SHADOW) && kind[r.oid] == 3) ++acted_retained;
+        if (r.type == R_DECIDE && was[r.oid]) ++person_decided;
+      }
+      const bool ok = drawn > 0 && acted_retained == 0 && person_decided * 2 >= drawn && live_inc > 0;
+      snprintf(buf, sizeof buf, "(%ld cells drawn into the control arm at eps_floor %.2f; %ld decided by a person; %ld acted on by the machine while retained; %ld incumbent outcomes landed in the live period)",
+               drawn, A.f.writ.eps_floor, person_decided, acted_retained, live_inc);
+      ck(LIE == 26 ? !ok : ok, "O20  the retained stratum never reaches zero: drawn at every rung, decided by a person, never acted on while retained", buf);
+    }
+    // --- O31: THE LADDER v2's FALSE-PROMOTION RATE (E3, F23). Three seeded
+    //          firms, every band admitted to the wager as a test, the judge
+    //          exactly on the null's boundary (a delta worse than the bar at
+    //          its upper bound); the share of bands a LICENSE row by the wager
+    //          ever took past the test rung must be at alpha. The lie: a judge
+    //          a quarter above the boundary under the boundary judge's name,
+    //          whose promotions are true and many.
+    //          The statistic is the standing share: at every term boundary, the
+    //          admitted bands standing above the test rung over all band-terms.
+    //          A false promotion lapses at the end of the next term, so this is
+    //          the share of time a null band holds authority it did not earn,
+    //          and the level bounds it. The judge sits one point inside the
+    //          null, because the promotion probability climbs steeply as a judge
+    //          crosses the boundary and the instrument places it to about a point.
+    //          The bands are split by where the judge's coins demonstrably sat
+    //          against the ladder's own frozen g0 (the coin per cell is
+    //          recorded): on the null side the standing share must be at the
+    //          level; the alternative side is the rule's power and is printed.
+    //          The lie, a judge lifted a quarter above the boundary under the
+    //          boundary judge's name, leaves no band on the null side at all.
+    auto o31_battery = [&](bool shared_world, float shift, O31Trial& sum) {
+      Args ab = aa; ab.days = 130; ab.test_admit = true; ab.shared = shared_world; ab.flip_rate = 0.05f;
+      sum = O31Trial{}; sum.saw_shared = true;
+      for (int s = 0; s < 3; ++s) {
+        const O31Trial t = o31_trial(ab, aa.seed ^ (0x9E3779B9ULL * (uint64_t)(s + 1)), BJ_AT_G0U, shift);
+        sum.bands += t.bands; sum.promoted += t.promoted; sum.outcomes += t.outcomes; sum.band_terms += t.band_terms; sum.standing += t.standing;
+        sum.achieved += t.achieved; sum.target += t.target; sum.measured += t.measured; sum.saw_shared = sum.saw_shared && t.saw_shared;
+        sum.settled += t.settled; sum.expected += t.expected; sum.observed += t.observed; sum.boundary += t.boundary;
+        sum.null_bands += t.null_bands; sum.null_promoted += t.null_promoted; sum.null_band_terms += t.null_band_terms; sum.null_standing += t.null_standing;
+        sum.alt_bands += t.alt_bands; sum.alt_promoted += t.alt_promoted; sum.null_gap += t.null_gap; sum.g0_spread += t.g0_spread / 3.0;
+      }
+    };
+    //          The judge aims three points inside each term's frozen g0 and
+    //          lands further inside by its own late share (its coin is the
+    //          target on on-time reads and nothing else); its true position is
+    //          read off the coins it spent and must be inside the null. The
+    //          promotion probability climbs steeply across the boundary, which
+    //          is the rule's power and not its error; the power curve is the
+    //          receipt's, from --o31 --shift.
+    //          Beside the plant, the process itself is run at the exact
+    //          boundary in a Bernoulli world (outcomes at g0 against a frozen
+    //          bar, twenty thousand band-terms of three hundred outcomes): the
+    //          chance of crossing the first earned rung's threshold must be at
+    //          most alpha 2^-2 per term, which is Ville's bound with nothing in the way.
+    auto o31_line = [&](const O31Trial& s, const char* prefix, double& share, double& bound) {
+      share = s.null_band_terms ? (double)s.null_standing / (double)s.null_band_terms : 0.0;
+      bound = 0.05 + 1.96 * std::sqrt(0.05 * 0.95 / (double)std::max(1L, s.null_band_terms));
+      const double all_share = s.band_terms ? (double)s.standing / (double)s.band_terms : 0.0;
+      const double all_bound = 0.05 + 1.96 * std::sqrt(0.05 * 0.95 / (double)std::max(1L, s.band_terms));
+      snprintf(buf, sizeof buf, "(%s3 seeded firms, %ld bands run, the judge on each term's frozen g0 less three points: over the %ld settled wager cells the process graded, expected good rate %.4f from its coins, observed %.4f, the g0 of their acts' terms %.4f, so %s the null; %ld ever promoted; %ld of %ld band-terms standing above the test rung, share %.4f against alpha 0.05, bound %.4f; against each band's lowest g0 across terms (mean spread %.3f): %ld bands below it with %ld promoted, %ld above it with %ld promoted)",
+               prefix, s.bands, s.settled, s.settled ? s.expected / s.settled : 0.0, s.settled ? s.observed / s.settled : 0.0, s.settled ? s.boundary / s.settled : 0.0,
+               (s.settled && s.expected <= s.boundary) ? "INSIDE" : "OUTSIDE", s.promoted, s.standing, s.band_terms, all_share, all_bound,
+               s.g0_spread, s.null_bands, s.null_promoted, s.alt_bands, s.alt_promoted);
+      (void)share; (void)bound;
+    };
+    {
+      // the process at the exact boundary, in a Bernoulli world: Ville's bound with nothing in the way
+      Ladder mc; mc.init(1); long mc_terms = 0, mc_cross = 0;
+      for (int band = 0; band < 2000; ++band) {
+        const double bar = 0.30 + 0.45 * u01(0x4D434C41ULL /*'MCLA'*/, 1, (uint32_t)band);
+        const double g0 = std::max(0.02, 1.0 - (1.0 - bar) * (1.0 + (double)Writ().canary_delta));
+        for (int term = 0; term < 10; ++term) {
+          ++mc_terms; double logE = 0.0;
+          for (int i = 0; i < 300; ++i) {
+            const bool good = u01(0x4D434C41ULL, 2 + term, (uint32_t)band * 1000u + (uint32_t)i) < (float)g0;   // exactly on the boundary
+            logE += good ? std::log(bar / g0) : std::log((1.0 - bar) / (1.0 - g0));
+            if (logE >= mc.threshold(2)) { ++mc_cross; break; }
+          }
+        }
+      }
+      const double mc_rate = (double)mc_cross / (double)mc_terms, mc_level = mc.alpha_promote / 4.0;
+      const double mc_bound = mc_level + 1.96 * std::sqrt(mc_level * (1.0 - mc_level) / (double)mc_terms);
+      O31Trial s; o31_battery(false, (LIE == 27) ? 0.40f : -0.03f, s);   // the lie lifts the target above the bar itself
+      char pre[320]; snprintf(pre, sizeof pre, "at the exact boundary in a Bernoulli world %ld of %ld band-terms crossed the first earned rung's threshold, rate %.4f against alpha/4 = %.4f, bound %.4f; the plant: ", mc_cross, mc_terms, mc_rate, mc_level, mc_bound);
+      double share, bound; o31_line(s, pre, share, bound);
+      // the judge sits three points inside each term's frozen g0 (it reads the governor's bars); the level bounds the standing share over every admitted band-term
+      const double all_share = s.band_terms ? (double)s.standing / (double)s.band_terms : 0.0;
+      const double all_bound = 0.05 + 1.96 * std::sqrt(0.05 * 0.95 / (double)std::max(1L, s.band_terms));
+      const bool inside = s.settled > 0 && s.expected <= s.boundary;
+      const bool ok = mc_rate <= mc_bound && inside && s.bands >= 30 && s.band_terms >= 60 && all_share <= all_bound;
+      (void)share; (void)bound;
+      ck(LIE == 27 ? !ok : ok, "O31  the ladder v2 leaves a judge inside the null with unearned authority no more of the time than its level", buf);
+    }
+    // --- O31b: THE SAME UNDER THE SHARED FACT (E3). One fact moves hundreds
+    //           of frames at once, so outcomes within an epoch are exchangeable,
+    //           not independent; the guarantee must survive it. The lie: the
+    //           flip schedule removed under the same name (no change is seen).
+    {
+      O31Trial s; o31_battery(LIE != 28, -0.03f, s);
+      double share, bound; o31_line(s, s.saw_shared ? "the shared fact moved; " : "the shared fact NEVER MOVED; ", share, bound);
+      const double all_share = s.band_terms ? (double)s.standing / (double)s.band_terms : 0.0;
+      const double all_bound = 0.05 + 1.96 * std::sqrt(0.05 * 0.95 / (double)std::max(1L, s.band_terms));
+      const bool inside = s.settled > 0 && s.expected <= s.boundary;
+      const bool ok = s.saw_shared && inside && s.bands >= 30 && s.band_terms >= 60 && all_share <= all_bound;
+      (void)share; (void)bound;
+      ck(LIE == 28 ? !ok : ok, "O31b the standing share holds under a shared fact that correlates outcomes within its epochs", buf);
+    }
+    // --- O45: THE LADDER v2 IS A FOLD (E3). The bars, both processes and the
+    //          term's marks rebuilt from OUTCOME rows in arrival order with the
+    //          terms the governor's NOTE rows name, the rungs from LICENSE rows,
+    //          and every LICENSE row graded as it is folded. The lie: a fold
+    //          that skips one band's term boundaries, so an outcome of the
+    //          closed term is counted into the next.
+    {
+      char first[160] = {0};
+      const LadderFoldOut F45 = fold_ladder_v2(A.tape, A.w.NC, oa.lad, (LIE == 29) ? 2 : -1);
+      const long diffs = ladder_diff_v2(F45.lad, oa.lad, first, sizeof first);
+      const bool ok = diffs == 0 && F45.unjustified == 0 && F45.license_rows > 0;
+      snprintf(buf, sizeof buf, "(%zu class-bands; %ld diffs against the live ladder%s%s; %ld LICENSE rows folded, %ld unjustified%s%s)",
+               F45.lad.lic.size(), diffs, diffs ? ", first: " : "", diffs ? first : "", F45.license_rows, F45.unjustified, F45.unjustified ? ", first: " : "", F45.unjustified ? F45.first : "");
+      ck(LIE == 29 ? !ok : ok, "O45  the ladder v2 is a fold: the bars, both processes and every LICENSE row re-derive from rows", buf);
+    }
+    // --- O59: THE REGIME DETECTOR (E3). A world whose arrivals shift by 1.6x
+    //          from day 80: the governor must write a REGIME row for the
+    //          classes the rows can identify, and none in the world without
+    //          the shift. The lie: a detector that never hears.
+    {
+      Args a59 = aa; a59.shift_day = 80; a59.shift_mult = 1.6f; a59.days = 130; a59.lie = (LIE == 30) ? 30 : -1;
+      Run S59; S59.f = build_acme(200, 7, 7); S59.w = world_of(a59, 7); S59.w.demand_scale = 1.5f;
+      const AutoOut o59 = run_machine(a59, S59, a59.warm, a59.days, false); (void)o59;
+      long fired = 0, dropped = 0, quiet = 0;
+      for (const Rec& r : S59.tape.rec) { if (r.type == R_REGIME) ++fired; if (r.type == R_LICENSE && r.via == LC_REGIME) ++dropped; }
+      for (const Rec& r : A.tape.rec) if (r.type == R_REGIME) ++quiet;
+      const bool ok = fired > 0 && quiet == 0;
+      snprintf(buf, sizeof buf, "(a 1.6x shift from day 80: %ld REGIME rows, %ld bands dropped to watching; the world without a shift: %ld REGIME rows)", fired, dropped, quiet);
+      ck(LIE == 30 ? !ok : ok, "O59  the regime detector fires on a planted shift of arrivals and stays quiet without one", buf);
+    }
   }
 
   // --- O2: the gate can never widen. Exhaustive over the input lattice.
@@ -1246,9 +1556,12 @@ static int cmd_selftest(const Args& a) {
              GateIn ge = g; ge.exposure_left = 0.f; const GateOut ve = gate(ge, wr);
              if (ve.verdict == V_ACT) ok = false;
              if (v.verdict != V_ACT && (ve.verdict != v.verdict || ve.reason != v.reason)) ok = false;
+             // E3: the retained stratum holds every point, at every rung, for a person
+             GateIn gt = g; gt.to_incumbent = true; const GateOut vt = gate(gt, wr);
+             if (vt.verdict != V_HOLD || (vt.reason != RS_RETAINED && vt.reason != RS_BLOCKED && vt.reason != RS_SWITCH_OFF)) ok = false;
            }
     if (LIE == 2) ok = !ok;                                       // THE LIE
-    snprintf(buf, sizeof buf, "(%ld lattice points, %ld reached ACT; pressure never widened; off held every point; an exhausted exposure allowance held every act and moved nothing else)", cases, acts);
+    snprintf(buf, sizeof buf, "(%ld lattice points, %ld reached ACT; pressure never widened; off held every point; an exhausted exposure allowance held every act and moved nothing else; retained held every point)", cases, acts);
     ck(LIE == 2 ? !ok : ok, "O2   the gate never authorises outside its licence", buf);
   }
 
@@ -1424,14 +1737,14 @@ static int cmd_selftest(const Args& a) {
   //          work but generates more review is demoted the same day.
   {
     // C1: the ladder moves inside the governor, on the machine's own supervision meter
-    Governor g; Writ wr; wr.kappa_max = 1.0f; Tape t;
+    Governor g; Writ wr; wr.kappa_max = 1.0f; Tape t; Ledger Lg; Lg.init(4); Lg.day = 10;   // E3: the step reads the ledger's day
     g.init(4, wr, std::vector<float>(4, 1.f), 0u, 0u, std::vector<uint32_t>(4, 0u));
     g.lad.at(1, 2).rung = 3;
     SupervisionMeter sup; sup.init(4); sup.add_created(1, 2, 900); sup.add_removed(1, 2, 400);
-    g.step(10, sup, t);
+    g.step(Lg, sup, t);
     bool ok = (g.lad.at(1, 2).rung == 1);
     if (LIE == 10) { g.lad.at(2, 2).rung = 3; sup.add_created(2, 2, 1); sup.add_removed(2, 2, 1000);
-                     g.step(11, sup, t); ok = (g.lad.at(2, 2).rung == 1); }   // THE LIE
+                     Lg.day = 11; g.step(Lg, sup, t); ok = (g.lad.at(2, 2).rung == 1); }   // THE LIE
     snprintf(buf, sizeof buf, "(kappa %.2f -> rung %d)", g.lad.at(1, 2).kappa(), g.lad.at(1, 2).rung);
     ck(LIE == 10 ? !ok : ok, "O10  kappa demotes a class that costs more than it saves", buf);
   }
@@ -1529,5 +1842,6 @@ int main(int argc, char** argv) {
   if (!strcmp(a.mode, "--automate"))   return cmd_automate(a);
   if (!strcmp(a.mode, "--multiverse")) return cmd_multiverse(a);
   if (!strcmp(a.mode, "--o31"))        return cmd_o31(a);
+  if (!strcmp(a.mode, "--stub-sweep")) return cmd_stub_sweep(a);
   return cmd_selftest(a);
 }

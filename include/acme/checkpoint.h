@@ -128,14 +128,18 @@ inline void des(Des& d, Resident& r) {
 }
 inline void ser(Ser& s, const Ladder& L) {
   s.pod(L.NC); s.vec(L.lic); s.pod(L.alpha_promote); s.pod(L.alpha_demote); s.pod(L.term_days);
+  s.pod(L.delta); s.pod(L.m_min); s.pod(L.m_term); s.pod(L.bar_z);
   s.pod(L.schema_pin); s.pod(L.judge_hash); s.vec(L.template_hash);
+  s.vec(L.opened); s.vec(L.hist_bar); s.vec(L.hist_g0); s.vec(L.hist_pt);
 }
 inline void des(Des& d, Ladder& L) {
   d.pod(L.NC); d.vec(L.lic); d.pod(L.alpha_promote); d.pod(L.alpha_demote); d.pod(L.term_days);
+  d.pod(L.delta); d.pod(L.m_min); d.pod(L.m_term); d.pod(L.bar_z);
   d.pod(L.schema_pin); d.pod(L.judge_hash); d.vec(L.template_hash);
+  d.vec(L.opened); d.vec(L.hist_bar); d.vec(L.hist_g0); d.vec(L.hist_pt);
 }
-inline void ser(Ser& s, const Governor& g) { s.pod(g.salt); ser(s, g.lad); s.pod(g.wr); s.pod(g.NC); s.vec(g.per_term); s.pod(g.lie_band_dependent); }
-inline void des(Des& d, Governor& g)       { d.pod(g.salt); des(d, g.lad); d.pod(g.wr); d.pod(g.NC); d.vec(g.per_term); d.pod(g.lie_band_dependent); }
+inline void ser(Ser& s, const Governor& g) { s.pod(g.salt); ser(s, g.lad); s.pod(g.wr); s.pod(g.NC); s.vec(g.per_term); s.vec(g.arr_prev); s.pod(g.lie_band_dependent); s.pod(g.lie_regime_deaf); }
+inline void des(Des& d, Governor& g)       { d.pod(g.salt); des(d, g.lad); d.pod(g.wr); d.pod(g.NC); d.vec(g.per_term); d.vec(g.arr_prev); d.pod(g.lie_band_dependent); d.pod(g.lie_regime_deaf); }
 inline void ser(Ser& s, const PlantJudge& j) { s.pod(j.judge_seed); s.pod(j.id_hash); s.pod(j.learns); s.vec(j.comp); s.vec(j.comp_n); }
 inline void des(Des& d, PlantJudge& j)       { d.pod(j.judge_seed); d.pod(j.id_hash); d.pod(j.learns); d.vec(j.comp); d.vec(j.comp_n); }
 inline void ser(Ser& s, const ReplayOut& R) {
