@@ -131,6 +131,7 @@ inline WorkResult human_work(World& w, Ledger& L, Firm& f, Tape& tape, HumanStat
       }
   }
   o.last_touch = day;
+  o.hold_reason = 0; o.hold_seat = -1;                      // D0: a touch ends the hold in force (the rows above and below say so)
 
   // --- FETCH. Open the systems this class needs, one application at a time.
   // A person under time pressure opens fewer, which is exactly how completeness
@@ -329,13 +330,22 @@ inline void human_day(World& w, Ledger& L, Firm& f, Tape& tape, HumanStats& st,
     }
     if (best < 0 || best_room < 5.f) continue;             // nobody has room; it stays OPEN and ages
     proj[best] += 20.f + 9.0f * (float)planted(o.cls).n_systems;
-    o.seat = best; o.state = OB_QUEUED; ++o.hops;
+    o.seat = best; o.state = OB_QUEUED; ++o.hops; o.hold_reason = 0; o.hold_seat = -1;
     tape.put(R_ASSIGN, day, o.id, o.cls, best, ARM_HUMAN, 0, o.hops);
   }
 
   // --- the work. Each seat drains its queue in deadline order until attention
   // runs out. What is left is held — and a hold is a row, with its margin, so
-  // that silence is auditable rather than merely absent.
+  // that silence is auditable rather than merely absent. D0: the row is written
+  // when the hold in force changes (the seat or the reason), not per seat per
+  // day; a hold that stands unchanged is the absence of any other row about
+  // the cell, which the fold reads as exactly that.
+  auto hold = [&](Obligation& o, int sid, int reason) {
+    ++st.n_held;                                            // the meter counts the day held, row or not
+    if (o.hold_reason == reason && o.hold_seat == sid) return;
+    o.hold_reason = (uint8_t)reason; o.hold_seat = sid;
+    tape.put(R_HOLD, day, o.id, o.cls, sid, ARM_HUMAN, reason, 0, o.margin, 0.f, 0, 0, 0, PROV_H);
+  };
   std::vector<std::vector<uint32_t>> queue(f.size());
   for (uint32_t i : L.open_idx) {
     const Obligation& o = L.ob[i];
@@ -351,14 +361,8 @@ inline void human_day(World& w, Ledger& L, Firm& f, Tape& tape, HumanStats& st,
     Seat& s = f.seat[sid];
     for (uint32_t i : q) {
       Obligation& o = L.ob[i];
-      if (o.dep >= 0 && L.ob[o.dep].state != OB_SETTLED && L.ob[o.dep].state != OB_DECIDED) {
-        tape.put(R_HOLD, day, o.id, o.cls, sid, ARM_HUMAN, 1 /*blocked*/, 0, o.margin, 0.f, 0, 0, 0, PROV_H);
-        ++st.n_held; continue;
-      }
-      if (s.attn_left < 12.f) {                              // out of day
-        tape.put(R_HOLD, day, o.id, o.cls, sid, ARM_HUMAN, 2 /*no attention*/, 0, o.margin, 0.f, 0, 0, 0, PROV_H);
-        ++st.n_held; continue;
-      }
+      if (o.dep >= 0 && L.ob[o.dep].state != OB_SETTLED && L.ob[o.dep].state != OB_DECIDED) { hold(o, sid, 1 /*blocked*/); continue; }
+      if (s.attn_left < 12.f) { hold(o, sid, 2 /*no attention*/); continue; }   // out of day
       const WorkResult r = human_work(w, L, f, tape, st, i, sid, day);
       s.attn_left -= r.minutes;
       st.attention_spent += r.minutes;

@@ -350,6 +350,7 @@ struct Integrator {
     ledger.push_back(e);
     o.decision = decision; o.state = OB_DECIDED; o.day_decided = day; o.by_machine = 1; o.band = (uint8_t)band; o.via = (uint8_t)via;
     o.margin = margin;
+    o.hold_reason = 0; o.hold_seat = -1; o.mhold_reason = 0; o.mhold_band = 0;   // D0: an effect ends every hold in force
   }
   // An effect is reversible only until the world reacts to it, and the world's
   // reaction is the outcome being graded. So the window closes at settlement,
@@ -362,6 +363,7 @@ struct Integrator {
       if (o.id != e.oid) continue;
       if (o.state == OB_SETTLED) return false;            // the world already reacted
       o.state = e.prev_state; o.seat = e.prev_seat; o.day_decided = e.prev_decided; o.by_machine = 0; o.via = 0;
+      o.hold_reason = 0; o.hold_seat = -1; o.mhold_reason = 0; o.mhold_band = 0;
       // the row carries everything the inverse restores: prev_state (b), prev_seat (margin), prev_decided (value)
       tape.put(R_UNDO, day, o.id, o.cls, -1, ARM_MACHINE, e.decision, (int)e.prev_state,
                (float)e.prev_seat, (float)e.prev_decided, 0, 0, 0, PROV_M);

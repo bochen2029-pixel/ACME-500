@@ -342,14 +342,17 @@ struct Resident {
     fd.init(NC, NS, seed); st.init(NC); sup.init(NC);
   }
 
-  void period(Ledger& L, Firm& f, Tape& tape, uint32_t day, const Store& store, Judge& judge, Judge& frontier, const Ladder& lic);
-  void grade(Ledger& L, uint32_t day, Judge& judge, Judge& frontier);
+  // D0: the machine reads its day from the ledger, where the TICK row put it.
+  void period(Ledger& L, Firm& f, Tape& tape, const Store& store, Judge& judge, Judge& frontier, const Ladder& lic);
+  void grade(Ledger& L, Judge& judge, Judge& frontier);
 };
 
 // One period of the resident. The whole thing is a solve, a read budget, a gate
-// and a hand.
-inline void Resident::period(Ledger& L, Firm& f, Tape& tape, uint32_t day, const Store& store,
+// and a hand. It runs when the world port has folded a TICK: the day is the
+// ledger's and nothing else's.
+inline void Resident::period(Ledger& L, Firm& f, Tape& tape, const Store& store,
                              Judge& judge, Judge& frontier, const Ladder& lic) {
+  const uint32_t day = L.day;
   ++st.periods;
   // --- the adjudication budget: the humans who are still here. This is the
   // ceiling on the whole enterprise and it is deliberately small.
@@ -461,9 +464,16 @@ inline void Resident::period(Ledger& L, Firm& f, Tape& tape, uint32_t day, const
     Obligation& o = L.ob[idx];
     const int c = o.cls; const ClassSpec& sp = cls_spec(c);
 
+    // D0: the machine's hold is written when it changes (reason or band) and
+    // stands until the cell is touched by an effect or the next hold differs
+    auto mhold = [&](int reason, int band, float direction_) {
+      ++st.held; ++st.reason_count[reason];
+      if (o.mhold_reason == (uint8_t)(reason + 1) && o.mhold_band == (uint8_t)band) return;
+      o.mhold_reason = (uint8_t)(reason + 1); o.mhold_band = (uint8_t)band;
+      tape.put(R_HOLD, day, o.id, c, -1, ARM_MACHINE, reason, band, direction_, sp.value, band, 0, 0, PROV_M);
+    };
     if (!has_prop[i]) {                                          // the budget never reached it
-      ++st.held; ++st.unread; ++st.reason_count[RS_UNREAD];
-      tape.put(R_HOLD, day, o.id, c, -1, ARM_MACHINE, RS_UNREAD, 0, 0.f, sp.value, 0, 0, 0, PROV_M);
+      ++st.unread; mhold(RS_UNREAD, 0, 0.f);
       continue;
     }
     const Ledger::LastProp& m = *L.memo(o.id);
@@ -484,7 +494,7 @@ inline void Resident::period(Ledger& L, Firm& f, Tape& tape, uint32_t day, const
 
     // the strata reach the gate as rows the governor wrote before this period;
     // the rung reaches it as the table the governor keeps, keyed to this judge
-    const int stratum = L.stratum_of(o.id, day);
+    const int stratum = L.stratum_of(o.id);
     GateIn g{}; g.cls = c; g.rung = lic.rung_for(c, b, judge.hash()); g.band = b;
     g.direction = direction; g.sharpness = sharp; g.novelty = nov;
     g.reversible = sp.reversible; g.warrant_reserved = sp.warrant; g.blocked = blocked;
@@ -493,7 +503,7 @@ inline void Resident::period(Ledger& L, Firm& f, Tape& tape, uint32_t day, const
     g.budget_left = (float)(adjudication_budget_min - adj_used * 45.0);
 
     const GateOut v = gate(g, wr);
-    ++st.reason_count[v.reason];
+    if (v.verdict != V_HOLD) ++st.reason_count[v.reason];       // a hold counts its reason where it is written
     st.margin_abs.add(std::fabs(direction));
     fd.calib_push(c, std::fabs(mach_complete[i] - 0.7f));
 
@@ -560,8 +570,7 @@ inline void Resident::period(Ledger& L, Firm& f, Tape& tape, uint32_t day, const
         break;
       }
       default: {
-        ++st.held;
-        tape.put(R_HOLD, day, o.id, c, -1, ARM_MACHINE, v.reason, b, direction, sp.value, b, 0, 0, PROV_M);
+        mhold(v.reason, b, direction);
         break;
       }
     }
@@ -571,7 +580,8 @@ inline void Resident::period(Ledger& L, Firm& f, Tape& tape, uint32_t day, const
 // Outcomes arrive. The field learns from them; the judge is told about the cells
 // it decided. Nothing here widens a licence: that is the governor's fold of the
 // same OUTCOME rows.
-inline void Resident::grade(Ledger& L, uint32_t day, Judge& judge, Judge& frontier) {
+inline void Resident::grade(Ledger& L, Judge& judge, Judge& frontier) {
+  const uint32_t day = L.day;
   float ftmp[FT_N];
   for (Obligation& o : L.ob) {
     if (o.state != OB_SETTLED || o.day_settled != day) continue;

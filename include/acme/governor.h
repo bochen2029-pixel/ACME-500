@@ -78,8 +78,11 @@ struct Governor {
   // stratum persists across periods while its rate stands. Audit takes
   // precedence over canary, as it does in the gate's published order. The row
   // carries the kind, the canary rate and the audit rate the draw was made
-  // against, so a fold can grade the draw (O21).
-  void draw_strata(Ledger& L, Tape& tape, uint32_t day) {
+  // against, so a fold can grade the draw (O21). D0: the row is written when
+  // the draw in force changes (kind or either rate), and stands until then; the
+  // day is the ledger's, folded from the TICK row.
+  void draw_strata(Ledger& L, Tape& tape) {
+    const uint32_t day = L.day;
     for (uint32_t i : L.open_idx) {
       const Obligation& o = L.ob[i];
       if (o.state == OB_DECIDED || o.state == OB_SETTLED) continue;
@@ -91,7 +94,10 @@ struct Governor {
       if (u01(salt, 7100 + c, o.id) < ra)      kind = ST_AUDIT;
       else if (u01(salt, 7000 + c, o.id) < rc) kind = ST_CANARY;
       if (lie_band_dependent && kind == ST_CANARY && b != 2) kind = ST_NONE;   // THE LIE (O21): the wide band alone is drawn
-      put_fold(tape, L, R_STRATUM, day, o.id, c, -3, ARM_GOVERNOR, kind, (int)(rc * 1e6f), 0.f, ra, b);
+      const int rc_i = (int)(rc * 1e6f);
+      if (L.stratum_drawn(o.id) && L.stratum_of(o.id) == kind
+          && L.stratum_rate_of(o.id) == (float)rc_i * 1e-6f && L.stratum_audit_of(o.id) == ra) continue;
+      put_fold(tape, L, R_STRATUM, day, o.id, c, -3, ARM_GOVERNOR, kind, rc_i, 0.f, ra, b);
     }
   }
 

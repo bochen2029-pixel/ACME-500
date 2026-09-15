@@ -38,8 +38,8 @@ int acme_o17_instantiate() {
   Resident r; r.init(L.NC, f.size(), C, f.writ, 1);
   Ladder lic; lic.init(L.NC, alphabet_hash(), 0x4E554C4Cu);
   NullStore store; NullJudge judge, frontier;
-  r.period(L, f, t, 0, store, judge, frontier, lic);
-  r.grade(L, 0, judge, frontier);
+  r.period(L, f, t, store, judge, frontier, lic);
+  r.grade(L, judge, frontier);
   const ReplayOut rp = replay(L, f, r.fd, C, lic, f.writ, store, judge);
   const Residual res = residual_of(lic, C);
   const ArmResult ar = score_arm(L, f);

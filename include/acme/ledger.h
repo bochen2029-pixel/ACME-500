@@ -62,6 +62,14 @@ struct Obligation {
   uint8_t  via = 0;
   uint8_t  band = 0;
   int      dep = -1;            // waits on another obligation (an index into the ledger)
+  // D0: THE HOLD IN FORCE. A hold is written when it changes, not per seat per
+  // day: the person's (seat, reason) and the machine's (reason, band). Any touch
+  // of the cell (a fetch, an act, a mid-case hold, a handoff, a decision, an
+  // effect) ends the hold in force, so the next hold is a change and a row.
+  uint8_t  hold_reason = 0;     // 0 none · 1 blocked · 2 no attention   (a person's hold, in force)
+  int32_t  hold_seat = -1;      // the seat that holds it
+  uint8_t  mhold_reason = 0;    // the resident's hold in force: RS_* + 1, 0 none
+  uint8_t  mhold_band = 0;
 };
 
 // Memory decays. A case you last touched nine days ago costs you re-acquisition,
@@ -119,14 +127,19 @@ struct Ledger {
   // C1: THE STRATA. The governor draws canary / audit / retained per open oid
   // before the machine's period and writes STRATUM rows; the gate reads them
   // from here and never touches the salt. Valid for the period they were drawn in.
+  // D0: a stratum row is written when the draw changes, and the draw in force
+  // stands until the next row; the fold keeps the kind and both rates per cell.
   std::vector<uint8_t>    stratum_kind;       // [oid] 0 none · 1 canary · 2 audit · 3 retained-control
-  std::vector<uint32_t>   stratum_day;        // [oid] the period the draw belongs to (+1; 0 = never drawn)
-  std::vector<float>      stratum_rate;       // [oid] the canary rate the last draw was made against
+  std::vector<uint32_t>   stratum_day;        // [oid] the period of the last draw (+1; 0 = never drawn)
+  std::vector<float>      stratum_rate;       // [oid] the canary rate the draw in force was made against
+  std::vector<float>      stratum_audit;      // [oid] the audit rate likewise
 
   void init(int nc) { NC = nc; by_class.assign(nc, TimeLedger{}); }
   const LastProp* memo(uint32_t oid) const { return (oid < last_prop.size() && last_prop[oid].valid) ? &last_prop[oid] : nullptr; }
-  int stratum_of(uint32_t oid, uint32_t day_) const { return (oid < stratum_kind.size() && stratum_day[oid] == day_ + 1) ? (int)stratum_kind[oid] : 0; }
+  int   stratum_of(uint32_t oid) const { return oid < stratum_kind.size() ? (int)stratum_kind[oid] : 0; }
   float stratum_rate_of(uint32_t oid) const { return oid < stratum_rate.size() ? stratum_rate[oid] : 0.f; }
+  float stratum_audit_of(uint32_t oid) const { return oid < stratum_audit.size() ? stratum_audit[oid] : 0.f; }
+  bool  stratum_drawn(uint32_t oid) const { return oid < stratum_day.size() && stratum_day[oid] != 0; }
 
   Obligation* at_oid(uint32_t oid) {
     if (oid == 0 || oid >= idx_of_oid.size() || idx_of_oid[oid] == 0) return nullptr;
@@ -167,11 +180,11 @@ struct Ledger {
         return;
       }
       case R_ASSIGN: { Obligation* o = at_oid(r.oid); if (!o) return;
-        o->seat = r.seat; o->state = OB_QUEUED; o->hops = (uint8_t)r.b; return; }
+        o->seat = r.seat; o->state = OB_QUEUED; o->hops = (uint8_t)r.b; o->hold_reason = 0; o->hold_seat = -1; return; }
       case R_CONTEXT: { Obligation* o = at_oid(r.oid); if (!o) return;
         if (r.flags & RF_LOST) o->systems_opened &= ~(1u << (r.a & 31));
         else { o->systems_opened |= (1u << (r.a & 31)); if (r.seat >= 0) { total.fetch.add(r.value); if (r.cls < NC) by_class[r.cls].fetch.add(r.value); } }
-        if (r.seat >= 0) o->last_touch = r.day;
+        if (r.seat >= 0) { o->last_touch = r.day; o->hold_reason = 0; o->hold_seat = -1; }
         return; }
       case R_ACT: {
         const bool cl = r.oid != 0 && r.cls < NC;
@@ -186,7 +199,7 @@ struct Ledger {
           case ACT_MEETING:   total.meeting.add(r.value); break;
         }
         if (Obligation* o = at_oid(r.oid)) {
-          o->last_touch = r.day;
+          o->last_touch = r.day; o->hold_reason = 0; o->hold_seat = -1;
           if (r.a == ACT_FRAME || r.a == ACT_DECIDE) o->completeness = r.margin;   // what the reader held
         }
         return;
@@ -194,9 +207,15 @@ struct Ledger {
       case R_MEETING: total.meeting.add(r.value); return;
       case R_HOLD: {
         Obligation* o = at_oid(r.oid); if (!o) return;
-        // reasons 1 (blocked) and 2 (no attention) are written without touching the
-        // case; only reason 3, a day that ended mid-case, is a touch
-        if (r.a == 3 && r.seat >= 0) { o->state = OB_INPROG; o->completeness = r.value; o->margin = r.margin; o->band = r.band; o->last_touch = r.day; }
+        if (r.seat >= 0) {
+          // reasons 1 (blocked) and 2 (no attention) are the hold in force, written
+          // on change (D0); reason 3, a day that ended mid-case, is a touch and ends it
+          if (r.a == 3) { o->state = OB_INPROG; o->completeness = r.value; o->margin = r.margin; o->band = r.band; o->last_touch = r.day;
+                          o->hold_reason = 0; o->hold_seat = -1; }
+          else          { o->hold_reason = (uint8_t)r.a; o->hold_seat = r.seat; }
+        } else {                      // the resident's hold in force: reason and band
+          o->mhold_reason = (uint8_t)(r.a + 1); o->mhold_band = r.band;
+        }
         return;
       }
       case R_ESCALATE: {
@@ -205,6 +224,7 @@ struct Ledger {
         if (r.seat >= 0) {            // a person handed it up: the receiver starts cold
           o->margin = r.margin; o->band = r.band;
           o->seat = r.a; o->escalations = (uint8_t)r.b; o->hops += 1; o->systems_opened = 0; o->last_touch = r.day;
+          o->hold_reason = 0; o->hold_seat = -1;
         }                             // the resident's escalation moves nothing but the state
         return;
       }
@@ -212,7 +232,7 @@ struct Ledger {
         Obligation* o = at_oid(r.oid); if (!o) return;
         o->decision = r.a; o->hops = (uint8_t)r.b; o->margin = r.margin; o->band = r.band;
         o->state = OB_DECIDED; o->day_decided = r.day; o->by_machine = 0; o->via = 0; o->seat = r.seat;
-        o->last_touch = r.day;
+        o->last_touch = r.day; o->hold_reason = 0; o->hold_seat = -1;
         return;
       }
       case R_PROPOSAL: {
@@ -223,14 +243,16 @@ struct Ledger {
         return;
       }
       case R_STRATUM: {
-        if (r.oid >= stratum_kind.size()) { stratum_kind.resize((size_t)r.oid + 1024, 0); stratum_day.resize((size_t)r.oid + 1024, 0); stratum_rate.resize((size_t)r.oid + 1024, 0.f); }
-        stratum_kind[r.oid] = (uint8_t)r.a; stratum_day[r.oid] = r.day + 1; stratum_rate[r.oid] = (float)r.b * 1e-6f;
+        if (r.oid >= stratum_kind.size()) { const size_t n = (size_t)r.oid + 1024;
+          stratum_kind.resize(n, 0); stratum_day.resize(n, 0); stratum_rate.resize(n, 0.f); stratum_audit.resize(n, 0.f); }
+        stratum_kind[r.oid] = (uint8_t)r.a; stratum_day[r.oid] = r.day + 1; stratum_rate[r.oid] = (float)r.b * 1e-6f; stratum_audit[r.oid] = r.value;
         return;
       }
       case R_EFFECT: {
         Obligation* o = at_oid(r.oid); if (!o) return;
         o->decision = r.a; o->state = OB_DECIDED; o->day_decided = r.day; o->by_machine = 1;
         o->via = r.via; o->band = r.band; o->margin = r.margin;
+        o->hold_reason = 0; o->hold_seat = -1; o->mhold_reason = 0; o->mhold_band = 0;
         if (const LastProp* p = memo(r.oid)) o->completeness = p->completeness_hat;
         return;
       }
@@ -238,6 +260,7 @@ struct Ledger {
         Obligation* o = at_oid(r.oid); if (!o) return;
         o->state = (uint8_t)r.b; o->seat = (int32_t)r.margin; o->day_decided = (uint32_t)r.value;
         o->by_machine = 0; o->via = 0;
+        o->hold_reason = 0; o->hold_seat = -1; o->mhold_reason = 0; o->mhold_band = 0;
         return;
       }
       case R_OUTCOME: {
@@ -299,6 +322,8 @@ inline FoldDiff ledger_diff(const Ledger& L, const Ledger& w) {
     if (a.via != b.via) miss("via", i);
     if (a.band != b.band) miss("band", i);
     if (a.dep != b.dep) miss("dep", i);
+    if (a.hold_reason != b.hold_reason || a.hold_seat != b.hold_seat) miss("hold in force", i);
+    if (a.mhold_reason != b.mhold_reason || a.mhold_band != b.mhold_band) miss("machine hold in force", i);
   }
   if (L.open_idx != w.open_idx) miss("open_idx", 0);
   if (L.next_id != w.next_id) miss("next_id", 0);
@@ -316,9 +341,17 @@ inline FoldDiff ledger_diff(const Ledger& L, const Ledger& w) {
     const uint8_t ka = i < L.stratum_kind.size() ? L.stratum_kind[i] : 0, kb = i < w.stratum_kind.size() ? w.stratum_kind[i] : 0;
     const uint32_t da = i < L.stratum_day.size() ? L.stratum_day[i] : 0, db = i < w.stratum_day.size() ? w.stratum_day[i] : 0;
     const float ra = i < L.stratum_rate.size() ? L.stratum_rate[i] : 0.f, rb = i < w.stratum_rate.size() ? w.stratum_rate[i] : 0.f;
-    if (ka != kb || da != db || ra != rb) miss("stratum", i);
+    const float aa = i < L.stratum_audit.size() ? L.stratum_audit[i] : 0.f, ab = i < w.stratum_audit.size() ? w.stratum_audit[i] : 0.f;
+    if (ka != kb || da != db || ra != rb || aa != ab) miss("stratum", i);
   }
   return d;
+}
+
+// D0: the clock is a row the machine folds. The world port appends TICK and the
+// ledger's day moves with it; the machine reads its day from the ledger only.
+inline void tick_fold(Tape& tape, Ledger& L, uint32_t day) {
+  tape.tick(day);
+  L.apply(tape.rec.back());
 }
 
 // The live path writes a row and folds it into its own ledger in one motion, so

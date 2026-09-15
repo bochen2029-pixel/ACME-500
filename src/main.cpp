@@ -106,8 +106,8 @@ static void run_human(Run& R, int days, bool chain = true) {
   auto rep = reports_of(R.f);
   if (R.tape.size() == 0) R.tape.header(MODE_SYNTHETIC, SW_LIVE, alphabet_hash());
   for (int d = 0; d < days; ++d) {
-    R.tape.tick((uint32_t)d);                       // v2: the clock is a row
-    world_arrive(R.w, R.L, R.tape, (uint32_t)d);
+    world_arrive(R.w, R.L, R.tape, (uint32_t)d);    // intake lands
+    tick_fold(R.tape, R.L, (uint32_t)d);            // D0: the clock is a row, and the ledger's day moves with it
     human_day(R.w, R.L, R.f, R.tape, R.hs, rep, (uint32_t)d);
     world_settle(R.w, R.L, R.f, R.tape, (uint32_t)d);
   }
@@ -202,17 +202,19 @@ static AutoOut run_machine(const Args& a, Run& R, int warm_days, int total_days,
   // ---- PHASE 4+: live. Both the remaining humans and the resident, on one world.
   auto rep = reports_of(R.f);
   t0 = now_s();
+  // D0: the loop is the world port's. Intake lands, a TICK is folded, and the
+  // machine runs its period on the day the ledger now says; it is never told.
   for (int d = warm_days; d < total_days; ++d) {
-    R.tape.tick((uint32_t)d);
-    world_arrive(R.w, R.L, R.tape, (uint32_t)d);
-    gov.draw_strata(R.L, R.tape, (uint32_t)d);                                     // the governor draws first
-    res.period(R.L, R.f, R.tape, (uint32_t)d, store, judge, frontier, gov.lad);    // the resident goes next: it never sleeps
+    world_arrive(R.w, R.L, R.tape, (uint32_t)d);                                   // intake lands
+    tick_fold(R.tape, R.L, (uint32_t)d);                                           // the clock is a row; the ledger's day moves
+    gov.draw_strata(R.L, R.tape);                                                  // the governor draws first
+    res.period(R.L, R.f, R.tape, store, judge, frontier, gov.lad);                 // the resident goes next: it never sleeps
     human_day(R.w, R.L, R.f, R.tape, R.hs, rep, (uint32_t)d);
     const size_t settled_from = R.tape.size();
     world_settle(R.w, R.L, R.f, R.tape, (uint32_t)d);
     gov.grade(R.tape, settled_from);                                               // the governor folds the day's OUTCOME rows
-    res.grade(R.L, (uint32_t)d, judge, frontier);                                  // the field learns; the judges are told
-    gov.step((uint32_t)d, res.sup, R.tape);                                        // the ladder moves, as rows
+    res.grade(R.L, judge, frontier);                                               // the field learns; the judges are told
+    gov.step(R.L.day, res.sup, R.tape);                                            // the ladder moves, as rows
     ++out.periods;
   }
   out.period_ms = (now_s() - t0) * 1000.0 / std::max(1, out.periods);
@@ -722,7 +724,7 @@ static int cmd_selftest(const Args& a) {
         if (r.type == R_PROPOSAL && !counted[r.oid] && r.cls < NCc) {
           counted[r.oid] = 1;
           const Drawn& d = drawn[r.oid];
-          if (!d.valid || d.day != r.day) continue;
+          if (!d.valid || d.day > r.day) continue;                // D0: the draw in force stands from its row until the next
           const size_t k = (size_t)r.cls * NBAND + r.band;
           Ncell[k] += 1.0; E[k] += (1.0 - (double)d.ra) * (double)d.rc; if (d.kind == 1) O[k] += 1.0;
         }
