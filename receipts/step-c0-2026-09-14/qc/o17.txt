@@ -1,0 +1,2 @@
+  [PASS] O17  the machine links without the plant: ledger.h, port.h, solver.h, machine.h, report.h compile under -DACME_NO_PLANT
+  [PASS] O17  the machine links without the plant: the lie TU (one include of world.h) was refused by the guard   (with oracle 17 lied to: PASS on its line means the lie was caught)

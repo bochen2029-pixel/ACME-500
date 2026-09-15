@@ -35,6 +35,9 @@ It is a falsifier first, a gym second, and a demonstrator last. **It tests the i
 |---|---|
 | [first run](receipts/RECEIPT_ACME500_FIRST-RUN_2026-09-13.md) | 15 of 16 oracles; twelve of fourteen lie arms catching their lie; seven defects found with lines, most of them under the headline numbers |
 | [honest instrument](receipts/RECEIPT_ACME500_HONEST-INSTRUMENT_2026-09-13.md) | 16 of 16; all fourteen lie arms seen to fire; the coverage estimator replaced by one graded by the world (error 0.05 to 0.07, correlation 0.84 to 0.96 on three seeds); the twin's cost sign reversed by pricing the backlog; the cascade restated |
+| [step A](receipts/RECEIPT_ACME500_STEP-A_2026-09-14.md) (v2 begins) | O1b, determinism over the machine arm; the dead physics deleted (F15); O28, a tool oracle for uncalled functions; 17 of 17 with fifteen lie arms; every reading identical |
+| [step B](receipts/RECEIPT_ACME500_STEP-B_2026-09-14.md) and its remediation | the record is v2 (40 bytes, `via`, `arm` = the decider); the rows the fold was missing; `ledger.h` folds the tape into every cell and the minute meter; O14 fold-to-identity, O15 the ladder is a fold, O25a no clock in the kernel, O29 row shape; the alphabet pin; 20 of 20 with eighteen lie arms; every reading identical |
+| [step C0](receipts/RECEIPT_ACME500_STEP-C0_2026-09-14.md) | every consumer reads the folded ledger; the port (`Store::frame`, `Judge::read`) with the plant behind it; O17, the machine links without the plant; the prints that attribute (minutes by via, the binding reason per band, the frame split, the row histogram); every reading identical; F21 found and recorded |
 
 The readings as they stand, synthetic firm, one writ, 500 seats, demand 1.5:
 
@@ -68,7 +71,7 @@ Every oracle carries a lie. Under `--lie N` the mechanism oracle N claims to tes
 | O0c | a single flipped field localises to its row | PASS, localised at row -1 |
 | O1 | same seed produces a byte-identical tape | PASS, 219432 rows, memcmp |
 | O1b | same seed produces a byte-identical MACHINE arm: tape, chain, licence table | PASS, 414752 rows; rec same, chain same, licence table same |
-| O14 | the ledger folds from the tape: cold fold == live world (a verified shadow; no consumer reads it yet) | PASS, 58367 cells folded from 414752 rows; 0 field diffs; 0 minute diffs; alphabet pin matches |
+| O14 | the ledger folds from the tape: cold fold == the live ledger every consumer reads | PASS, 58367 cells folded from 414752 rows; 0 field diffs; 0 minute diffs; alphabet pin matches |
 | O29 | every row carries what the v2 table says it carries | PASS, 414752 rows scanned, 0 shape faults |
 | O15 | the ladder is a fold of OUTCOME rows: counts rebuilt == live | PASS, 72 class-bands; 0 count diffs against the live ladder |
 | O2 | the gate never authorises outside its licence | PASS, 8640 lattice points, 390 reached ACT |
@@ -85,10 +88,9 @@ Every oracle carries a lie. Under `--lie N` the mechanism oracle N claims to tes
 | O13 | the measured decide fraction ranks the planted intensity | PASS, partial Spearman 0.963 over 24 classes, n_systems controlled; the LEVEL is never recovered |
 | O28 | no dead physics: every free function in firm.h/world.h has a caller | PASS, 12 functions |
 | O25a | the kernel reads no clock: machine.h, solver.h, ledger.h, report.h read time only from TICK rows | PASS |
-| O17 | the machine links without the plant: the kernel headers compile under -DACME_NO_PLANT and one include of world.h is refused | PASS |
+| O17 | the machine links without the plant: ledger.h, port.h, solver.h, machine.h, report.h compile under -DACME_NO_PLANT | PASS |
 
-
-*Regenerated from `receipts/step-c0-2026-09-14/selftest.txt`, `o28_o25a.txt` and `o17.txt` by `tools/oracle_table.py`, never edited by hand. O25a is a source scan (no clock read in the kernel's files); the dynamic O25 (same rows at different wall spacing give identical verdicts) waits for the TICK-driven loop of step D.*
+*Regenerated from `receipts/step-c0-2026-09-14/qc/selftest.txt`, `o28_o25a.txt` and `o17.txt` by `tools/oracle_table.py`, never edited by hand. O25a is a source scan (no clock read in the kernel's files); the dynamic O25 (same rows at different wall spacing give identical verdicts) waits for the TICK-driven loop of step D.*
 
 ## How it is built
 
@@ -100,7 +102,7 @@ Every oracle carries a lie. Under `--lie N` the mechanism oracle N claims to tes
 - **The gate contains nothing learned.** Five verdicts, a published order of refusal, budget checked last so that running out of supervision produces a hold and never an act. Direction, sharpness and novelty are three numbers, not entropy.
 - **κ.** Supervision created over supervision removed, per class-band. The one meter that can fail while every other number improves.
 
-The full design, with the arithmetic of n₀, the ladder, the cascade fitted both ways, and the honest paragraph about meetings, is [docs/DESIGN.md](docs/DESIGN.md).
+The standing architecture, with the arithmetic of n₀, the verdict law, the data model, the kernel, the judge port, the build order and the kills, is [docs/ARCHITECTURE_v2.md](docs/ARCHITECTURE_v2.md); its §14 is the order of steps and §14a the amendments after review. [docs/DESIGN.md](docs/DESIGN.md) is v1's design, kept as the receipt of what ran at tag `v1-step-A`.
 
 ## The observer
 
@@ -140,15 +142,18 @@ The director cuts on the phase boundaries in `phases.json` and on nothing else. 
 
 ```
 src/main.cpp              five modes and the oracle battery
-include/acme/core.h       the RNG, fixed-point accumulators, BLAKE2b, the tape, the schema
+include/acme/core.h       the RNG, fixed-point accumulators, BLAKE2b, the 40-byte record and the tape, the schema and its pin
 include/acme/firm.h       the cone from the span, the α/E split, skills, the writ, the outcome vocabulary and its price
-include/acme/world.h      determinants and where they live, arrivals, the read, the exogenous grader
-include/acme/human.h      the five acts, the glue, the derived meeting calendar, escalation
+include/acme/ledger.h     THE LEDGER: the cells, the open set and the minute meter, as a fold of the tape; includes nothing from the plant
+include/acme/port.h       THE PORT: Store::frame and Judge::read, the only way the machine touches a world
+include/acme/world.h      THE PLANT: determinants and where they live, arrivals, the read, the exogenous grader; PlantStore, PlantJudge
+include/acme/human.h      the incumbent arm: the five acts, the glue, the derived meeting calendar, escalation
 include/acme/solver.h     the field, log-domain Sinkhorn with finite stocks, the gate, the hand
-include/acme/machine.h    compile, invariant mining, replay, the two graders, the ladder, the resident
-include/acme/report.h     the cascade fitted both ways, the residual, the paired arms
+include/acme/machine.h    compile, invariant mining, replay, the two graders, the ladder, the resident (links without the plant)
+include/acme/report.h     the cascade fitted both ways, the residual, the paired arms, the prints that attribute
+tools/                    the tool oracles: dead_symbols.py (O28, O25a), o17.py (O17); oracle_table.py regenerates the table above
 receipts/                 every run, with commands, outputs, exit codes and what was not done
-docs/                     the design, the method, the observer contract, the step-1 brief
+docs/                     ARCHITECTURE_v2.md (standing), DESIGN.md (v1), the method, the observer contract, the briefs
 observer/                 the visualization
 ```
 
@@ -156,7 +161,7 @@ observer/                 the visualization
 
 `CLAUDE.md` binds any agent session in this tree and is worth a human's read too: reproduce the baseline battery before editing; a lie arm counts only when the lied-to oracle is seen to catch it; never report a process as running without its PID and CPU time; the physics in `firm.h` and `world.h` is not under review and no constant is tuned to pass an oracle; every step ends in a dated receipt.
 
-The next steps, in order: a `--dump` verb so the observer reads the binary's own tape; the three cheap kills in the wider programme; and then the only grader that matters, one real wire.
+The next steps are §14 of the architecture, in order: C1 (the judge on its own key, the read budget with the frame-hash memo, planted truth off the machine's path, the governor's own translation unit writing `STRATUM` rows, O16 and O21; the first step allowed to move a number, with every delta named), then D (the durable tape, the switch and the pill, the TICK-driven loop), E, F (`--dump`), G (one real lane, folded), H, and I, the only grader that matters: one real wire.
 
 ## License
 

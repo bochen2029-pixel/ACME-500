@@ -552,9 +552,11 @@ static int cmd_selftest(const Args& a) {
     ck(LIE == 14 ? !same : same, "O1b  same seed produces a byte-identical MACHINE arm: tape, chain, licence table", buf);
 
     // --- O14: FOLD-TO-IDENTITY. The cold fold of A's tape must equal A's live
-    //          world field by field, the open set included, and the folded minute
-    //          meter must equal the live one. The lie is a struct field set with
-    //          no row: exactly the defect the v1 program had everywhere.
+    //          ledger field by field, the open set included, and the folded minute
+    //          meter must equal the live one. Since C0 the live ledger is what every
+    //          consumer reads, so this is the oracle that makes the fold the truth.
+    //          The lie is a struct field set with no row: exactly the defect the v1
+    //          program had everywhere.
     {
       if (LIE == 15) A.L.ob[A.L.ob.size() / 2].hops += 1;                  // THE LIE
       const Ledger L = Ledger::fold(A.tape, A.w.NC);
@@ -564,7 +566,7 @@ static int cmd_selftest(const Args& a) {
       snprintf(buf, sizeof buf, "(%zu cells folded from %zu rows; %ld field diffs%s%s; %ld minute diffs; alphabet pin %s)",
                L.ob.size(), A.tape.size(), fd_.fields, fd_.fields ? ", first: " : "", fd_.fields ? fd_.first : "",
                mins, L.schema == alphabet_hash() ? "matches" : "DIFFERS");
-      ck(LIE == 15 ? !ok : ok, "O14  the ledger folds from the tape: cold fold == live world (a verified shadow; no consumer reads it yet)", buf);
+      ck(LIE == 15 ? !ok : ok, "O14  the ledger folds from the tape: cold fold == the live ledger every consumer reads", buf);
     }
     // --- O29: ROW-SHAPE CONFORMANCE. One scan of the tape; per type, the fields
     //          the v2 table says are populated must be populated. This is the

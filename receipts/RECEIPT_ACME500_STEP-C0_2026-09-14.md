@@ -1,6 +1,6 @@
 # Receipt · ACME-500 v2 step C0 · consumers onto the fold; the machine links without the plant · 2026-09-14
 
-*Claude Opus 5. Implements step C0 as sequenced in `docs/ARCHITECTURE_v2.md` §14a after the step-B review: the fold stops being a shadow and becomes the thing the numbers come from, with every printed reading byte-identical to v1 because only where a value is read from changed. Branch `v2` of `C:\55555\acme500` (repository `github.com/bochen2029-pixel/ACME-500`, branch `v2`). Built and run under WSL from a fresh copy. Raw outputs in `receipts/step-c0-2026-09-14/` (24 files).*
+*Claude Opus 5. Implements step C0 as sequenced in `docs/ARCHITECTURE_v2.md` §14a after the step-B review: the fold stops being a shadow and becomes the thing the numbers come from, with every printed reading byte-identical to v1 because only where a value is read from changed. Branch `v2` of `C:\55555\acme500` (repository `github.com/bochen2029-pixel/ACME-500`, branch `v2`). Built and run under WSL from a fresh copy. Raw outputs in `receipts/step-c0-2026-09-14/` (24 run outputs, plus the table the README is regenerated from; the addendum's 25 are under `addendum-prints/`).*
 
 ## 0 · What C0 changed
 
