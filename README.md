@@ -24,12 +24,12 @@ An organization is treated here as a function from events to effects that was im
 ACME-500 is a firm with planted truth. The tacit mass of each decision class, the competence of each seat, the support coefficient and the fixed floor of the headcount cascade, the judgment intensity of each class: all planted, none shown to the instrument. The instrument must recover them from the tape, and an oracle checks that it did. That makes three things possible that a deployment cannot do:
 
 1. **Falsify the method before a customer does.** The first run found seven defects under its own headline numbers, retracted the headline, and found that its coverage estimator's premise was false. Those receipts are in this repository, unedited.
-2. **Measure the number a real programme can never get.** A real firm's canary and its control share one ledger, so the within-firm estimate of the machine's effect is biased by selection and interference and nobody can say by how much. A twin runs two firms on one seed with nothing shared and prints the bias. Here it is +31.7 points.
+2. **Measure the number a real programme can never get.** A real firm's canary and its control share one ledger, so the within-firm estimate of the machine's effect is biased by selection and interference and nobody can say by how much. A twin runs two firms on one seed with nothing shared and prints the bias. At E0 it is +34.4 points.
 3. **Show the instrument running**, with its refusals, its holds, its kappa, and its own retractions, so that what a buyer sees is a reading and not a promise.
 
 It is a falsifier first, a gym second, and a demonstrator last. **It tests the instrument, never a business.** No number here has met a real firm.
 
-## Status, 2026-09-14
+## Status, 2026-09-15
 
 | receipt | result |
 |---|---|
@@ -39,10 +39,10 @@ It is a falsifier first, a gym second, and a demonstrator last. **It tests the i
 | [step B](receipts/RECEIPT_ACME500_STEP-B_2026-09-14.md) and its remediation | the record is v2 (40 bytes, `via`, `arm` = the decider); the rows the fold was missing; `ledger.h` folds the tape into every cell and the minute meter; O14 fold-to-identity, O15 the ladder is a fold, O25a no clock in the kernel, O29 row shape; the alphabet pin; 20 of 20 with eighteen lie arms; every reading identical |
 | [step C0](receipts/RECEIPT_ACME500_STEP-C0_2026-09-14.md) | every consumer reads the folded ledger; the port (`Store::frame`, `Judge::read`) with the plant behind it; O17, the machine links without the plant; the prints that attribute (minutes by via, the binding reason per band, the frame split, the row histogram); every reading identical; F21 found and recorded |
 | [step C1](receipts/RECEIPT_ACME500_STEP-C1_2026-09-14.md) | the judge on its own key with its own competence (F16); the kernel's completeness from the compile step; the planted half of the class table out of the kernel's reach (`planted(c)`, `build_acme` in the plant, the cascade fitted from a handed panel, kappa's denominator metered from rows); the read budget with the memo keyed on the frame; the governor in its own translation unit writing STRATUM, LICENSE and KAPPA rows; the licence keyed to the judge; O16, O21, O17 with a second lie; 22 of 22 with twenty lie arms; the first step to move a number, every delta named; F22 found and fixed |
-| [step E](receipts/RECEIPT_ACME500_STEP-E_2026-09-15.md), in progress | E0: a shared fact per class that moves; the judge's certificate through the port carries a proposal across a change when sign and band survive (789 of 2,062 moved frames at 500 seats, 0 disagreements against a fixed judge, O37); unresolved outcomes closed only by a write-off row that is evidence for nothing; outstanding exposure as a fold with the writ's cap (O38): the uncapped machine holds $96M in flight at peak and the licence follows the cap; 28 of 28 with twenty-six lie arms; every default reading identical to D2 |
 | [step D](receipts/RECEIPT_ACME500_STEP-D_2026-09-14.md) | D0: holds and strata as rows on change (the sim's tape 5.67M → 1.61M rows), the TICK-driven loop; D1: the durable tape in segments with the chain head in each header, the checkpoint with its meta written last, `--resume` from the newest valid one, `--dump` on the observer's contract, O18 with its lie and a real SIGKILL survived; D2: the switch `off/shadow/live/stop` from a file the machine never writes, the pill, the gate as a hashed library (O30a), every EFFECT re-derived from rows (O30), off invisible (O19), shadow agreement 87.2%; D3: the dynamic O25; 26 of 26 with twenty-four lie arms; every reading identical to C1 under `live` |
+| [step E](receipts/RECEIPT_ACME500_STEP-E_2026-09-15.md), in progress | E0: a shared fact per class that moves; the judge's certificate through the port carries a proposal across a change when sign and band survive (789 of 2,062 moved frames at 500 seats, 0 disagreements against a fixed judge, O37); unresolved outcomes closed only by a write-off row that is evidence for nothing; outstanding exposure as a fold with the writ's cap (O38): the uncapped machine holds $96M in flight at peak and the licence follows the cap; 28 of 28 with twenty-six lie arms; every default reading identical to D2 |
 
-The readings as they stand after step C1, synthetic firm, one writ, 500 seats, demand 1.5 (the C1 receipt names what moved from v1 and why):
+The readings as they stand after step C1 (D and E0 moved none of them at the defaults), synthetic firm, one writ, 500 seats, demand 1.5 (the C1 receipt names what moved from v1 and why):
 
 - **The twin.** The resident settles 187k obligations to the incumbent's 82k and ends with 19k open against 124k. It is 3.5 points worse on correctness and 4.6 points worse on the good rate. With the backlog priced at the writ's own stock price, total cost is $1,254M against $1,838M, a delta of −$583M in the machine's favour; with the backlog free, as the first run scored it, the sign is the other way. The within-firm canary estimate reads +29.8 points against a true paired effect of −4.6: **bias +34.4**.
 - **The reads.** With the memo keyed on the frame, the resident reads 1,729 cells a period against 3,328 when it re-read every open cell every day; 1,462 a period are carried forward. Behind the port a read is a forward pass, and the read budget is a dial: at 4,000 a day against the 84,000-cell warm backlog the machine wins the queue in a fortnight instead of a day and loses seven points of good rate on the way.
@@ -106,7 +106,7 @@ Every oracle carries a lie. Under `--lie N` the mechanism oracle N claims to tes
 | O17 | the machine links without the plant or the governor: ledger.h, port.h, license.h, solver.h, machine.h, report.h compile under -DACME_NO_PLANT -DACME_NO_GOVERNOR | PASS |
 | O30a | the gate is pinned: include/acme/gate.h digests to its pin aa7e850b6bdb032f | PASS |
 
-*Regenerated from `receipts/step-e-2026-09-15/e0/selftest.txt`, `o28_o25a.txt`, `o17.txt` and `o30a.txt` by `tools/oracle_table.py`, never edited by hand. O25a is a source scan (no clock read in the kernel's files); the dynamic O25 (same rows at different wall spacing give identical verdicts) waits for the TICK-driven loop of step D.*
+*Regenerated from `receipts/step-e-2026-09-15/e0/selftest.txt`, `o28_o25a.txt`, `o17.txt` and `o30a.txt` by `tools/oracle_table.py`, never edited by hand. O25a is a source scan (no clock read in the kernel's files); the dynamic O25 (same rows at different wall spacing give identical verdicts) has run in the battery since D3.*
 
 ## How it is built
 
@@ -118,7 +118,7 @@ Every oracle carries a lie. Under `--lie N` the mechanism oracle N claims to tes
 - **The gate contains nothing learned.** Five verdicts, a published order of refusal, budget checked last so that running out of supervision produces a hold and never an act. Direction, sharpness and novelty are three numbers, not entropy.
 - **κ.** Supervision created over supervision removed, per class-band. The one meter that can fail while every other number improves.
 
-The standing architecture, with the arithmetic of n₀, the verdict law, the data model, the kernel, the judge port, the build order and the kills, is [docs/ARCHITECTURE_v2.md](docs/ARCHITECTURE_v2.md); its §14 is the order of steps and §14a the amendments after review. [docs/DESIGN.md](docs/DESIGN.md) is v1's design, kept as the receipt of what ran at tag `v1-step-A`.
+The standing architecture is [docs/ARCHITECTURE_v4.md](docs/ARCHITECTURE_v4.md), a superset: v3 is its Part II verbatim and v2 is verbatim inside that, so every §-reference holds. v2's §14 is the order of steps and §14a/§14b the amendments after review; v3's §18–§23 add the alphabet thesis, the archive plane and the `TapeJudge`; v4's §24–§41 add the fifth world (the closed firm behind the port), lanes, the ladder v2, the constitution in code, the standard, and the order as confirmed on 2026-09-15 (§39.2). [docs/DESIGN.md](docs/DESIGN.md) is v1's design, kept as the receipt of what ran at tag `v1-step-A`.
 
 ## The observer
 
@@ -174,7 +174,7 @@ include/acme/machine.h    compile, invariant mining, replay, the read budget and
 include/acme/report.h     the cascade fitted from a handed panel, the residual, the paired arms, the prints that attribute
 tools/                    the tool oracles: dead_symbols.py (O28, O25a), o17.py (O17); oracle_table.py regenerates the table above
 receipts/                 every run, with commands, outputs, exit codes and what was not done
-docs/                     ARCHITECTURE_v2.md (standing), DESIGN.md (v1), the method, the observer contract, the briefs
+docs/                     ARCHITECTURE_v4.md (standing; v3 and v2 verbatim inside it), DESIGN.md (v1), the handoff, the method, the observer contract, the briefs
 observer/                 the visualization
 ```
 
@@ -182,7 +182,7 @@ observer/                 the visualization
 
 `CLAUDE.md` binds any agent session in this tree and is worth a human's read too: reproduce the baseline battery before editing; a lie arm counts only when the lied-to oracle is seen to catch it; never report a process as running without its PID and CPU time; the physics in `firm.h` and `world.h` is not under review and no constant is tuned to pass an oracle; every step ends in a dated receipt.
 
-The next steps are §14 of the architecture, in order: C1 (the judge on its own key, the read budget with the frame-hash memo, planted truth off the machine's path, the governor's own translation unit writing `STRATUM` rows, O16 and O21; the first step allowed to move a number, with every delta named), then D (the durable tape, the switch and the pill, the TICK-driven loop), E, F (`--dump`), G (one real lane, folded), H, and I, the only grader that matters: one real wire.
+The next steps, as confirmed on 2026-09-15 (ARCHITECTURE v4 §39.2): E3 (the ladder v2 with the retained stratum and the calibration harness; O20, O31, O31b, O45, O47; opened by an O31 reading against the ladder as built), then F0 (lanes, the licensor as a process, the replay with no model, the two-process sim), then F1a (the greenfield world and the selection rule; O39, O40, O41), then E1′, E2, G0 and G (one real lane, folded, at `off`), H, H2, and I, the only grader that matters: one real wire.
 
 ## License
 
