@@ -1,0 +1,17 @@
+/root/acme_v2/TK:
+total 72000
+drwxr-xr-x  3 root root     4096 Sep 14 23:40 .
+drwxr-xr-x 19 root root     4096 Sep 14 23:40 ..
+drwxr-xr-x  2 root root     4096 Sep 14 23:40 ckpt
+-rw-r--r--  1 root root 40000064 Sep 14 23:40 seg-000000.tape
+-rw-r--r--  1 root root 33706376 Sep 14 23:40 seg-000001.tape
+-rw-r--r--  1 root root      391 Sep 14 23:40 tape.meta.json
+
+/root/acme_v2/TK/ckpt:
+total 45352
+drwxr-xr-x 2 root root     4096 Sep 14 23:40 .
+drwxr-xr-x 3 root root     4096 Sep 14 23:40 ..
+-rw-r--r-- 1 root root      209 Sep 14 23:40 000189.meta
+-rw-r--r-- 1 root root 22642277 Sep 14 23:40 000189.state
+-rw-r--r-- 1 root root      209 Sep 14 23:40 000199.meta
+-rw-r--r-- 1 root root 23778869 Sep 14 23:40 000199.state

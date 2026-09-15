@@ -1,0 +1,2 @@
+dump: 2179226 rows -> /root/acme_v2/DUMPK (tape.bin 87169040 bytes, 60 snapshots)
+resume wall 18.84 s

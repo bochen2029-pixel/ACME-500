@@ -233,13 +233,18 @@ struct Rec {                 // v2 · 40 bytes · a tape is a scan, not a parse
 static_assert(sizeof(Rec) == 40, "Rec v2 is 40 bytes; a tape is a scan, not a parse");
 enum { REC_VER = 2 };
 
+// D1: a sink sees every record the moment it is chained, with the head after
+// it. The durable tape (tapefile.h) is one; the in-memory tape needs none.
+struct TapeSink { virtual ~TapeSink() {} virtual void on_append(const Rec& r, const uint8_t head_after[32]) = 0; };
+
 struct Tape {
   std::vector<Rec> rec;
   std::vector<uint8_t> chain;          // 32 bytes per record
   uint8_t head[32] = {0};
   bool chaining = true;                // off for the multiverse's throwaway forks
+  TapeSink* sink = nullptr;            // D1: the durable file, when there is one
 
-  void reset() { rec.clear(); chain.clear(); memset(head, 0, 32); last_tick_at = 0; }
+  void reset() { rec.clear(); chain.clear(); memset(head, 0, 32); last_tick_at = 0; notes_since_tick = 0; }
   size_t size() const { return rec.size(); }
 
   void append(const Rec& r) {
@@ -247,6 +252,20 @@ struct Tape {
     if (!chaining) return;
     Blake2b b; b.update(head, 32); b.update(&r, sizeof(Rec)); b.final(head);
     const size_t off = chain.size(); chain.resize(off + 32); memcpy(chain.data() + off, head, 32);
+    if (sink) sink->on_append(r, head);
+  }
+  // the chain head after row i, or the genesis head for i < 0
+  void head_at(long i, uint8_t out[32]) const {
+    if (i < 0 || (size_t)i >= rec.size() || chain.size() < ((size_t)i + 1) * 32) { memset(out, 0, 32); return; }
+    memcpy(out, chain.data() + (size_t)i * 32, 32);
+  }
+  // D1: cut the in-memory tape back to n rows (a restore from a checkpoint drops
+  // the rows of the period that was in flight); the head follows
+  void truncate(size_t n) {
+    if (n >= rec.size()) return;
+    rec.resize(n); if (chaining) chain.resize(n * 32);
+    if (n == 0) memset(head, 0, 32); else memcpy(head, chain.data() + (n - 1) * 32, 32);
+    recount_ticks();
   }
   void put(RecType t, uint32_t day, uint32_t oid, int cls, int seat, int arm,
            int a = 0, int b = 0, float margin = 0.f, float value = 0.f, int band = 0, int flags = 0,
@@ -254,6 +273,7 @@ struct Tape {
     Rec r{}; r.type = (uint16_t)t; r.cls = (uint16_t)cls; r.day = day; r.oid = oid; r.seat = seat;
     r.a = a; r.b = b; r.margin = margin; r.value = value; r.arm = (uint8_t)arm; r.band = (uint8_t)band; r.flags = (uint8_t)flags;
     r.via = (uint8_t)via; r.firm = 0; r.prov = (uint8_t)prov; r.ver = REC_VER;
+    if (t == R_NOTE) ++notes_since_tick;
     append(r);
   }
   // The first row of every tape: the mode, the switch and the schema pin. A fold
@@ -261,13 +281,21 @@ struct Tape {
   void header(int mode, int sw, uint32_t schema_hash) {
     put(R_HEADER, 0, 0, 0, -3, ARM_GOVERNOR, mode * 10 + sw, (int)schema_hash, 0.f, (float)REC_VER);
   }
-  // The clock is a row. b counts the rows of the period that just closed.
+  // The clock is a row. b counts the rows of the period that just closed. A
+  // NOTE is a row of no period (D1: a restore writes one between periods), so
+  // it is not counted.
   void tick(uint32_t day) {
-    const size_t since = rec.size() - last_tick_at;
+    const size_t since = rec.size() - last_tick_at - notes_since_tick;
     put(R_TICK, day, 0, 0, -3, ARM_GOVERNOR, (int)day, (int)since);
-    last_tick_at = rec.size();
+    last_tick_at = rec.size(); notes_since_tick = 0;
   }
-  size_t last_tick_at = 0;
+  size_t last_tick_at = 0, notes_since_tick = 0;
+  // after a load or a cut: where the last TICK was, and the notes since it
+  void recount_ticks() {
+    last_tick_at = 0; notes_since_tick = 0;
+    for (size_t i = rec.size(); i-- > 0; ) if (rec[i].type == R_TICK) { last_tick_at = i + 1; break; }
+    for (size_t i = last_tick_at; i < rec.size(); ++i) if (rec[i].type == R_NOTE) ++notes_since_tick;
+  }
   // Walk the chain from zero. Returns the index of the first bad record, or -1.
   long verify() const {
     if (!chaining) return -1;

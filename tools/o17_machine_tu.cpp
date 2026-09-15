@@ -13,6 +13,7 @@
 #include "acme/solver.h"
 #include "acme/machine.h"
 #include "acme/report.h"
+#include "acme/tapefile.h"   // D1: the durable tape is kernel-side
 
 namespace acme {
 // A null judge and a null store, so the kernel's period is instantiated

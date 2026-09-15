@@ -40,7 +40,8 @@ set(LIE_LINE_16 "O15")   # lie 16 = O15, the ladder is a fold (an outcome counte
 set(LIE_LINE_17 "O29")   # lie 17 = O29, row-shape conformance (an ARRIVE with no due day)
 set(LIE_LINE_18 "O16")   # lie 18 = O16, a null judge licenses nothing (a truth-reading judge under the null's name)
 set(LIE_LINE_19 "O21")   # lie 19 = O21, the canary draw is independent of the band (a band-dependent draw)
-foreach(N RANGE 0 19)
+set(LIE_LINE_20 "O18")   # lie 20 = O18, a kill survives (a restore that keeps the period in flight)
+foreach(N RANGE 0 20)
   add_test(NAME lie_${N} COMMAND acme --selftest --lie ${N})
   set_tests_properties(lie_${N} PROPERTIES
     PASS_REGULAR_EXPRESSION "\\[PASS\\] ${LIE_LINE_${N}} "

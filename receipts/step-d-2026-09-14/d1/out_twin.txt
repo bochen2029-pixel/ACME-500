@@ -1,0 +1,118 @@
+
+=== THE TWIN · TWO ACMES, ONE SEED, ONE PHYSICS ======================
+  Same arrivals, same determinants, same luck on every obligation id. The only
+  difference is who decides. A real firm cannot run this comparison — its canary
+  and its control share one ledger, and the humans see what the machine did and
+  best-respond to it. A twin can, and the most useful thing it prints is not
+  which arm won. It is HOW WRONG THE CANARY ESTIMATE WOULD HAVE BEEN.
+
+                                      incumbent       resident        delta
+  obligations settled                     82479         187068       104589
+  good outcomes  %                        42.70          38.06        -4.64
+  wrong outcomes %                         8.40          11.94         3.54
+  late outcomes  %                        48.90          50.01         1.10
+  deadline breaches %                     54.17          57.93         3.76
+  mean cycle, days                        51.94          58.14         6.20
+  writ cost of outcomes, $M              236.73         836.27       599.54
+  backlog at w_unplaced, $M             1600.98         418.01     -1182.97
+  TOTAL cost, $M                        1837.71        1254.27      -583.43
+  human minutes, thousands                24518          23355        -1163
+  still open at the end                  123927          19338      -104589
+
+  MINUTES BY VIA — the incumbent arm: 24518 thousand human minutes, by how the cell left the building
+  thousands of minutes                  fetch    frame   decide   commit transport   rework     glue  meeting     total  share
+  a person decided (via 0)             3041.7   1558.8   2865.2   1689.3    207.3     49.5      0.0      0.0    9411.7  38.4%
+  never decided, open at the end        965.7    504.9   1030.6      0.0    577.3     15.2      0.0      0.0    3093.7  12.6%
+  no cell: glue and meetings              0.0      0.0      0.0      0.0      0.0      0.0   7944.3   4068.3   12012.6  49.0%
+  all                                  4007.4   2063.7   3895.8   1689.3    784.6     64.7   7944.3   4068.3   24518.0 100.0%
+
+  MINUTES BY VIA — the resident arm: 23355 thousand human minutes, by how the cell left the building
+  thousands of minutes                  fetch    frame   decide   commit transport   rework     glue  meeting     total  share
+  a person decided (via 0)             2786.0   1430.0   2619.0   1568.7    173.8     47.0      0.0      0.0    8624.6  36.9%
+  the resident acted (via 1)              7.0      3.7      6.8      0.0      3.9      0.1      0.0      0.0      21.5   0.1%
+  drafted, a person keyed (via 2)       575.5    305.3    621.6      0.0    353.2      8.7      0.0      0.0    1864.2   8.0%
+  a rented mind acted (via 3)            78.2     40.8     77.8      0.0     44.4      1.1      0.0      0.0     242.4   1.0%
+  a signer executed (via 4)             187.8     98.1    194.7      0.0    101.8      4.2      0.0      0.0     586.5   2.5%
+  never decided, open at the end          1.2      0.5      1.0      0.0      0.7      0.0      0.0      0.0       3.3   0.0%
+  no cell: glue and meetings              0.0      0.0      0.0      0.0      0.0      0.0   7944.3   4068.3   12012.6  51.4%
+  all                                  3635.6   1878.3   3520.9   1568.7    677.8     61.2   7944.3   4068.3   23355.1 100.0%
+
+  COGNITIVE PATH LENGTH — the incumbent arm: rows from arrival to disposition, seats passed, days; per class,
+  cells a person decided against cells the machine disposed of (means)
+
+  class                  person n   rows  seats   days   machine n   rows  seats   days
+  quote.price                8482   11.1   1.04   11.8          0    0.0   0.00    0.0
+  quote.approve.disc          858   22.2   2.12   65.2          0    0.0   0.00    0.0
+  order.credit.check         6993   10.1   1.05   11.8          0    0.0   0.00    0.0
+  order.fulfil.sched        10220   12.1   1.04   11.9          0    0.0   0.00    0.0
+  invoice.issue             11540    8.4   1.03   11.9          0    0.0   0.00    0.0
+  collections.chase          5500    9.8   1.03   11.5          0    0.0   0.00    0.0
+  dispute.resolve             457   27.3   2.09   64.2          0    0.0   0.00    0.0
+  claim.intake.triage        8338   10.0   1.03   50.1          0    0.0   0.00    0.0
+  claim.coverage.det         5652   13.9   1.04   51.1          0    0.0   0.00    0.0
+  claim.reserve.set          1271   24.4   2.06  116.4          0    0.0   0.00    0.0
+  claim.settle.auth           147   56.8   5.00  137.0          0    0.0   0.00    0.0
+  claim.fraud.refer            47   52.9   3.15  131.8          0    0.0   0.00    0.0
+  po.match.3way              7404   10.4   1.11   64.8          0    0.0   0.00    0.0
+  vendor.onboard              445   14.6   1.13   41.9          0    0.0   0.00    0.0
+  contract.renew              130   55.1   5.00  130.5          0    0.0   0.00    0.0
+  spend.approve              4193    9.2   1.05   36.8          0    0.0   0.00    0.0
+  req.approve                 169   34.8   3.11  115.7          0    0.0   0.00    0.0
+  candidate.screen           2043   12.0   1.17   57.8          0    0.0   0.00    0.0
+  leave.approve              1755    9.4   1.12   57.1          0    0.0   0.00    0.0
+  accrual.post               3566   10.8   1.11   48.9          0    0.0   0.00    0.0
+  recon.break.clear          4824   12.4   1.12   50.7          0    0.0   0.00    0.0
+  forecast.adjust             423   29.4   2.14  103.0          0    0.0   0.00    0.0
+  kyc.review                 1713   14.0   1.26   60.3          0    0.0   0.00    0.0
+  reg.filing.prepare          126   66.1   5.00  109.9          0    0.0   0.00    0.0
+  all                       86296   11.5   1.12   34.3          0    0.0   0.00    0.0
+
+  COGNITIVE PATH LENGTH — the resident arm: rows from arrival to disposition, seats passed, days; per class,
+  cells a person decided against cells the machine disposed of (means)
+
+  class                  person n   rows  seats   days   machine n   rows  seats   days
+  quote.price                7472   11.5   1.04    5.2       4978    7.4   0.45   22.2
+  quote.approve.disc          647   24.2   2.11   48.6       3805   10.9   1.28   59.0
+  order.credit.check         6056   10.2   1.04    4.9       4445    6.6   0.44   23.3
+  order.fulfil.sched         9027   12.3   1.03    5.3       6160    7.9   0.48   24.4
+  invoice.issue             10132    8.6   1.03    5.2       7098    6.4   0.40   22.5
+  collections.chase          4864   10.0   1.03    5.1       3211    7.0   0.45   23.4
+  dispute.resolve             351   29.8   2.07   47.1       1800   11.8   1.21   56.0
+  claim.intake.triage        8137   11.4   1.04   34.4      12173    5.2   0.14   34.9
+  claim.coverage.det         5307   14.7   1.04   34.9       8729    5.7   0.19   36.6
+  claim.reserve.set          1253   27.2   2.07   74.9      10088    8.4   0.75   61.4
+  claim.settle.auth            96   56.7   5.00   96.8       6916    9.3   0.84   66.9
+  claim.fraud.refer            31   51.9   3.19   85.9       1436   10.6   0.82   67.1
+  po.match.3way              7805   11.7   1.10   40.1      15386    4.9   0.11   43.7
+  vendor.onboard              374   14.7   1.11   26.5        741    6.5   0.32   37.1
+  contract.renew               84   55.2   5.00   88.7       1697   10.6   0.97   62.9
+  spend.approve              3851    9.5   1.04   22.6       5679    5.3   0.18   30.9
+  req.approve                 143   35.9   3.12   76.6       1271    8.4   0.70   63.8
+  candidate.screen           2066   12.4   1.13   38.4       4660    5.2   0.15   42.8
+  leave.approve              1809   10.0   1.08   38.3       3732    4.8   0.11   42.8
+  accrual.post               3533   11.3   1.10   32.8       5262    5.1   0.14   35.2
+  recon.break.clear          4595   12.9   1.10   33.7       7245    5.3   0.14   34.5
+  forecast.adjust             299   29.3   2.14   72.0       2330    7.4   0.52   53.4
+  kyc.review                 2239   15.0   1.20   48.3       5452    4.6   0.05   48.2
+  reg.filing.prepare           87   65.9   5.00   76.2        693   16.0   1.61   54.5
+  all                       80258   12.0   1.11   22.4     124987    6.6   0.38   41.1
+
+=== THE NUMBER A REAL PROGRAMME CANNOT GET ============================
+  true effect, paired arms            -4.64 points of good-outcome rate (total cost delta $-583.4M)
+  within-firm canary estimate        +29.78  (unattended acts 12040 vs human-decided 79423 in the same firm)
+  assisted, not in the estimate     95605 drafts and warrants a person executed, 25.4% good
+  BIAS OF THE ESTIMATOR              +34.42
+
+  The canary is not measuring the same thing as the twin, and the gap is not
+  noise. Two mechanisms drive it and both grow with the canary rate: the machine
+  is routed the cases it was licensed for, which is selection; and the humans in
+  the same firm are working a queue the machine already drained, which is
+  interference. So r has an interior optimum, not just the floor n0/V that the
+  identifiability arithmetic gives. Raise r to clear n0 faster and you contaminate
+  the comparison; lower it to protect the comparison and you never clear n0.
+
+  Budget for a bias of about this size in any real programme. It is the term the
+  three single-way documents all left out, and a simulation is the only place it
+  can be measured at all.
+
+  both arms in 43.3 s.

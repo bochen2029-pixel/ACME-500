@@ -1,0 +1,9 @@
+[
+ {"day":0,"phase":"INSTRUMENT","source":"start: the boundary log; nobody uses anything"},
+ {"day":180,"phase":"COMPILE","source":"close of the warm history: compile_from_tape"},
+ {"day":180,"phase":"REPLAY","source":"close of the warm history: replay on its own support"},
+ {"day":180,"phase":"LICENSE","source":"row: first LICENSE"},
+ {"day":180,"phase":"CANARY","source":"row: first STRATUM a=1"},
+ {"day":196,"phase":"CLIMB","source":"row: first LICENSE a>=2"},
+ {"day":259,"phase":"CASCADE","source":"close: N = E/(1-alpha) + F, computed at the end; no row"}
+]

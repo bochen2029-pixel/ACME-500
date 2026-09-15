@@ -329,6 +329,81 @@ inline void print_binding_reasons(const Ladder& lad, const Writ& wr, uint32_t da
               unl, lad.NC * (NBAND - 1), top_under_floor);
 }
 
+// COGNITIVE PATH LENGTH (§9.3, D1). Per decided cell: the rows about it from
+// its arrival to its terminal DECIDE or EFFECT (fetches, frames, handoffs,
+// holds in force, proposals), the seats it passed through (hops, from the
+// ledger) and the days from arrival to disposition; per class, for cells a
+// person decided against cells the machine disposed of. It is the print that
+// says whether the interior was deleted or moved (kill F-PATH): a licensed
+// class disposed of in one read and one effect has path length two.
+struct PathLen {
+  int NC = 0;
+  std::vector<double> rows_h, hops_h, days_h, rows_m, hops_m, days_m;
+  std::vector<long>   n_h, n_m;
+  void init(int nc) { NC = nc; rows_h.assign(nc, 0); hops_h.assign(nc, 0); days_h.assign(nc, 0); rows_m.assign(nc, 0); hops_m.assign(nc, 0); days_m.assign(nc, 0); n_h.assign(nc, 0); n_m.assign(nc, 0); }
+  double mean(const std::vector<double>& v, const std::vector<long>& n, int c) const { return n[c] ? v[c] / n[c] : 0.0; }
+};
+inline PathLen path_length(const Tape& tape, const Ledger& L) {
+  PathLen P; P.init(L.NC);
+  std::vector<uint32_t> rows_to_term; std::vector<uint8_t> done;
+  tape.fold([&](const Rec& r) {
+    if (r.oid == 0) return;
+    if (r.oid >= rows_to_term.size()) { rows_to_term.resize((size_t)r.oid + 1024, 0); done.resize((size_t)r.oid + 1024, 0); }
+    if (done[r.oid]) return;
+    ++rows_to_term[r.oid];
+    if (r.type == R_DECIDE || r.type == R_EFFECT) done[r.oid] = 1;
+  });
+  for (const Obligation& o : L.ob) {
+    if (o.state != OB_DECIDED && o.state != OB_SETTLED) continue;
+    if (o.id >= done.size() || !done[o.id] || o.cls >= L.NC) continue;
+    const double rows = rows_to_term[o.id], hops = o.hops, days = (double)(o.day_decided - o.day_open);
+    if (o.by_machine) { P.rows_m[o.cls] += rows; P.hops_m[o.cls] += hops; P.days_m[o.cls] += days; ++P.n_m[o.cls]; }
+    else              { P.rows_h[o.cls] += rows; P.hops_h[o.cls] += hops; P.days_h[o.cls] += days; ++P.n_h[o.cls]; }
+  }
+  return P;
+}
+inline void print_path_length(const PathLen& P, const char* title) {
+  std::printf("\n  COGNITIVE PATH LENGTH — %s: rows from arrival to disposition, seats passed, days; per class,\n"
+              "  cells a person decided against cells the machine disposed of (means)\n\n", title);
+  std::printf("  %-22s %8s %6s %6s %6s   %8s %6s %6s %6s\n", "class", "person n", "rows", "seats", "days", "machine n", "rows", "seats", "days");
+  double th_r = 0, th_h = 0, th_d = 0, tm_r = 0, tm_h = 0, tm_d = 0; long th_n = 0, tm_n = 0;
+  for (int c = 0; c < P.NC; ++c) {
+    th_r += P.rows_h[c]; th_h += P.hops_h[c]; th_d += P.days_h[c]; th_n += P.n_h[c];
+    tm_r += P.rows_m[c]; tm_h += P.hops_m[c]; tm_d += P.days_m[c]; tm_n += P.n_m[c];
+    std::printf("  %-22s %8ld %6.1f %6.2f %6.1f   %8ld %6.1f %6.2f %6.1f\n", cls_spec(c).name,
+                P.n_h[c], P.mean(P.rows_h, P.n_h, c), P.mean(P.hops_h, P.n_h, c), P.mean(P.days_h, P.n_h, c),
+                P.n_m[c], P.mean(P.rows_m, P.n_m, c), P.mean(P.hops_m, P.n_m, c), P.mean(P.days_m, P.n_m, c));
+  }
+  std::printf("  %-22s %8ld %6.1f %6.2f %6.1f   %8ld %6.1f %6.2f %6.1f\n", "all", th_n,
+              th_n ? th_r / th_n : 0.0, th_n ? th_h / th_n : 0.0, th_n ? th_d / th_n : 0.0,
+              tm_n, tm_n ? tm_r / tm_n : 0.0, tm_n ? tm_h / tm_n : 0.0, tm_n ? tm_d / tm_n : 0.0);
+}
+
+// THE FRONTIER BILL BY VALUE QUINTILE (§9.3, D1). Every rental of the rented
+// mind is a row: an EFFECT via 3 or the resident's ESCALATE. Classes are sorted
+// by the value at stake and cut into five groups; what the frontier is spent
+// on, before step E ranks its queue by margin thinness x value.
+inline void print_frontier_bill(const Tape& tape, int NC) {
+  std::vector<long> rentals(NC, 0);
+  tape.fold([&](const Rec& r) {
+    if (r.cls >= NC) return;
+    if ((r.type == R_EFFECT && r.via == 3) || (r.type == R_ESCALATE && r.arm == ARM_MACHINE)) ++rentals[r.cls];
+  });
+  std::vector<int> order(NC); for (int c = 0; c < NC; ++c) order[c] = c;
+  std::sort(order.begin(), order.end(), [](int x, int y) { return cls_spec(x).value < cls_spec(y).value; });
+  long total = 0; for (long k : rentals) total += k;
+  std::printf("\n  THE FRONTIER BILL BY VALUE: %ld rentals, the classes in five groups from the least to the most at stake\n", total);
+  std::printf("  %-8s %-24s %10s %7s   %s\n", "group", "value at stake", "rentals", "share", "classes");
+  for (int g = 0; g < 5; ++g) {
+    const int lo = g * NC / 5, hi = (g + 1) * NC / 5;
+    long k = 0; std::string names; float vlo = 1e30f, vhi = 0.f;
+    for (int i = lo; i < hi; ++i) { const int c = order[i]; k += rentals[c]; vlo = std::min(vlo, cls_spec(c).value); vhi = std::max(vhi, cls_spec(c).value);
+      names += (names.empty() ? "" : " ") + std::string(cls_spec(c).name); }
+    char range[40]; snprintf(range, sizeof range, "$%.0fk to $%.0fk", vlo / 1000.f, vhi / 1000.f);
+    std::printf("  %-8d %-24s %10ld %6.1f%%   %s\n", g + 1, range, k, total ? 100.0 * k / total : 0.0, names.c_str());
+  }
+}
+
 // THE ROW HISTOGRAM. Rows by type, from which the write share S of §1 becomes
 // computable on writes rather than on minutes.
 inline void print_row_histogram(const Tape& tape) {

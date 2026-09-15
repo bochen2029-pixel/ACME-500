@@ -1,0 +1,1 @@
+dump: 2179225 rows -> /root/acme_v2/DUMP (tape.bin 87169000 bytes, 260 snapshots)

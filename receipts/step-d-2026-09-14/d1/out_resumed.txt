@@ -1,0 +1,4 @@
+
+=== RESTORE ===========================================================
+  tape /root/acme_v2/TK: 1842657 rows on disk, 32 bytes torn, restored at day 199 (cursor 1781013), 61644 rows of the period in flight dropped
+  continued to day 260: 2179226 rows, chain VERIFIED

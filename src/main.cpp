@@ -33,6 +33,10 @@
 #include "acme/license.h"
 #include "acme/governor.h"   // the salt, the strata, the ladder: main wires it; the machine never includes it
 #include "acme/report.h"
+#include "acme/tapefile.h"    // D1: the durable tape
+#include "acme/checkpoint.h"  // D1: the checkpoint beside it
+#include "acme/dump.h"        // D1: --dump DIR, the observer's contract
+#include <memory>
 #include <cstdio>
 #include <cstring>
 #include <chrono>
@@ -48,6 +52,10 @@ struct Args {
   bool quiet = false;
   int budget = -1;          // --budget N: the read budget per period (the writ's default if -1)
   const char* judge = "plant";   // --judge plant|null|rules: which stub stands behind the port (the gym's sweep, and O16's)
+  const char* tape = nullptr;    // --tape DIR: write the durable tape (segments, meta, checkpoints) there   [D1]
+  bool resume = false;           // --resume: restore from --tape DIR's newest valid checkpoint and continue   [D1]
+  int ckpt_every = 10;           // --ckpt-every K: a checkpoint every K live periods (0 = none)   [D1]
+  const char* dump = nullptr;    // --dump DIR: the observer's five files at the end of the run   [D1]
 };
 static Args parse(int argc, char** argv) {
   Args a;
@@ -67,6 +75,10 @@ static Args parse(int argc, char** argv) {
     else if (!strcmp(s, "--seed")) a.seed = (uint64_t)next_i(20260913);
     else if (!strcmp(s, "--budget")) a.budget = next_i(-1);
     else if (!strcmp(s, "--judge")) a.judge = (i + 1 < argc) ? argv[++i] : "plant";
+    else if (!strcmp(s, "--tape")) a.tape = (i + 1 < argc) ? argv[++i] : nullptr;
+    else if (!strcmp(s, "--resume")) a.resume = true;
+    else if (!strcmp(s, "--ckpt-every")) a.ckpt_every = next_i(10);
+    else if (!strcmp(s, "--dump")) a.dump = (i + 1 < argc) ? argv[++i] : nullptr;
     else if (!strcmp(s, "--quiet")) a.quiet = true;
     else { std::fprintf(stderr, "unknown flag %s\n", s); exit(2); }
   }
@@ -100,21 +112,27 @@ struct RulesJudge : Judge {                                  // a coin over the 
 // switch 0 off · 1 shadow · 2 live. ACME is (synthetic, live) by construction.
 enum { MODE_SYNTHETIC = 0, SW_OFF = 0, SW_SHADOW = 1, SW_LIVE = 2 };
 
-static void run_human(Run& R, int days, bool chain = true) {
+static void run_human(Run& R, int days, bool chain = true, int from_day = 0) {
   R.tape.chaining = chain;
-  R.hs.init(R.w.NC); if (R.L.NC == 0) R.init_ledger();
+  if (from_day == 0) { R.hs.init(R.w.NC); if (R.L.NC == 0) R.init_ledger(); }
   auto rep = reports_of(R.f);
   if (R.tape.size() == 0) R.tape.header(MODE_SYNTHETIC, SW_LIVE, alphabet_hash());
-  for (int d = 0; d < days; ++d) {
+  for (int d = from_day; d < days; ++d) {
     world_arrive(R.w, R.L, R.tape, (uint32_t)d);    // intake lands
     tick_fold(R.tape, R.L, (uint32_t)d);            // D0: the clock is a row, and the ledger's day moves with it
     human_day(R.w, R.L, R.f, R.tape, R.hs, rep, (uint32_t)d);
     world_settle(R.w, R.L, R.f, R.tape, (uint32_t)d);
+    dump_snapshot(R.tape, R.L, R.f, (uint32_t)d, nullptr, nullptr);
   }
 }
 
 static int cmd_sim(const Args& a) {
   Run R; R.f = build_acme(a.n, a.span, a.seed); R.w = make_world(a.seed); R.w.demand_scale = a.demand;
+  g_dump_dir = a.dump;
+  std::unique_ptr<TapeFile> file;
+  if (a.tape) { file.reset(new TapeFile()); uint8_t genesis[32] = {0};
+    if (!file->open_for_append(a.tape, alphabet_hash(), 0, genesis)) { std::fprintf(stderr, "cannot open the tape at %s\n", a.tape); return 3; }
+    R.tape.sink = file.get(); }
   rule("ACME CORP, AS IT IS");
   std::printf("  %d seats, span %d, %d layers.  %d IC / %d lead / %d manager / %d director / %d VP / %d C\n",
               R.f.size(), R.f.span, 6, R.f.n_ic, R.f.n_lead, R.f.n_mgr, R.f.n_dir, R.f.n_vp, R.f.n_c);
@@ -141,6 +159,8 @@ static int cmd_sim(const Args& a) {
               R.tape.size(), R.tape.head_hex().substr(0, 16).c_str(),
               R.tape.verify() < 0 ? "OK" : "BROKEN", dt, R.tape.size() / std::max(1e-9, dt));
   print_row_histogram(R.tape);
+  if (file) { R.tape.sink = nullptr; file->close(); tape_meta_write(a.tape, "sim", 0, 0, R.tape.size(), R.tape.head, R.tape.size(), a.n, a.span, a.seed, a.demand, a.days, 0); }
+  if (a.dump) dump_write(a.dump, R.tape, R.L, R.f, R.w, nullptr, nullptr, nullptr, nullptr, a.n, a.span, a.seed, a.demand, a.days, 0);
   std::printf("\n  READ THE LEDGER AGAIN. The escalation line is the round trip in its purest form:\n"
               "  every one of those %llu escalations made a manager re-open systems an IC had\n"
               "  already opened, because the manager could not see the IC's screen.\n",
@@ -168,65 +188,169 @@ struct AutoOut {
 // C1: the machine, the governor and the two judges, wired by main and never by
 // each other. `judge_override` lets the battery stand a null or a rules judge
 // behind the port (O16); the governor's lie flag is O21's.
+//
+// D1: the run is an object that can be checkpointed at a period boundary and
+// restored. Everything that influences a future row is in it or regenerable
+// from the args: the world and the cone from the seed, the rest from the
+// checkpoint (checkpoint.h). The durable tape, when there is one, sees every
+// row as it is chained.
+struct MachineRun {
+  Args a; Run& R; int warm, total;
+  Compiled C; ReplayOut RP; long hist_licensed = 0; double replay_ms = 0; int periods = 0;
+  PlantStore store; std::unique_ptr<PlantJudge> resident_judge, frontier;
+  NullJudge null_judge; RulesJudge rules_judge; Judge* judge = nullptr;
+  Resident res; Governor gov;
+  std::unique_ptr<TapeFile> file;               // the durable tape, if --tape
+  int ckpt_every = 0; std::string tape_dir;
+  MachineRun(const Args& a_, Run& r, int warm_, int total_) : a(a_), R(r), warm(warm_), total(total_), store(&r.w) {}
+
+  void make_judges(Judge* judge_override) {
+    resident_judge.reset(new PlantJudge(make_resident_judge(&R.w)));
+    frontier.reset(new PlantJudge(make_frontier_judge(&R.w)));
+    judge = judge_override ? judge_override
+          : !strcmp(a.judge, "null") ? (Judge*)&null_judge : !strcmp(a.judge, "rules") ? (Judge*)&rules_judge : (Judge*)resident_judge.get();
+  }
+  // a checkpoint at the close of day d: the state file, then its meta by rename
+  bool checkpoint(uint32_t d) {
+    if (file) file->flush();
+    const uint64_t cursor = R.tape.size(); uint8_t head[32]; memcpy(head, R.tape.head, 32);
+    const bool ok = ckpt_write(tape_dir, d, cursor, head, [&](Ser& s) {
+      ser(s, R.L); ser(s, R.hs); ser(s, R.f); s.pod(R.tape.last_tick_at);
+      ser(s, res); ser(s, gov); ser(s, *resident_judge); ser(s, *frontier);
+      ser(s, C); ser(s, RP); s.pod(hist_licensed); s.pod(replay_ms); s.pod(periods);
+    });
+    if (ok) tape_meta_write(tape_dir, "automate", judge->hash(), frontier->hash(), R.tape.size(), R.tape.head, cursor,
+                            a.n, a.span, a.seed, a.demand, total, warm);
+    return ok;
+  }
+  // the live loop from `from` to `total`, with a checkpoint every ckpt_every periods
+  void loop(int from) {
+    auto rep = reports_of(R.f);
+    for (int d = from; d < total; ++d) {
+      world_arrive(R.w, R.L, R.tape, (uint32_t)d);                                   // intake lands
+      tick_fold(R.tape, R.L, (uint32_t)d);                                           // the clock is a row; the ledger's day moves
+      gov.draw_strata(R.L, R.tape);                                                  // the governor draws first
+      res.period(R.L, R.f, R.tape, store, *judge, *frontier, gov.lad);               // the resident goes next: it never sleeps
+      human_day(R.w, R.L, R.f, R.tape, R.hs, rep, (uint32_t)d);
+      const size_t settled_from = R.tape.size();
+      world_settle(R.w, R.L, R.f, R.tape, (uint32_t)d);
+      gov.grade(R.tape, settled_from);                                               // the governor folds the day's OUTCOME rows
+      res.grade(R.L, *judge, *frontier);                                             // the field learns; the judges are told
+      gov.step(R.L.day, res.sup, R.tape);                                            // the ladder moves, as rows
+      ++periods;
+      dump_snapshot(R.tape, R.L, R.f, (uint32_t)d, &gov.lad, &res.st);
+      if (file && ckpt_every > 0 && ((d + 1 - warm) % ckpt_every == 0 || d + 1 == total)) checkpoint((uint32_t)d);
+    }
+    if (file) file->flush();
+  }
+  AutoOut finish(double t0) {
+    AutoOut out; out.C = C; out.RP = RP; out.hist_licensed = hist_licensed; out.replay_ms = replay_ms; out.periods = periods;
+    out.judge_hash = judge->hash();
+    out.period_ms = (now_s() - t0) * 1000.0 / std::max(1, periods);
+    out.lad = gov.lad; out.ms = res.st;
+    out.res = residual_of(gov.lad, C);
+    out.arm = score_arm(R.L, R.f);
+    return out;
+  }
+};
+
+// The whole programme from the start: the warm history, the compile step, the
+// judges, the governor, the replay, the admission, then the live loop.
 static AutoOut run_machine(const Args& a, Run& R, int warm_days, int total_days, bool verbose,
                            Judge* judge_override = nullptr) {
-  AutoOut out;
+  MachineRun M(a, R, warm_days, total_days);
   if (a.budget > 0) R.f.writ.read_budget = a.budget;
+  if (a.tape) {                                             // D1: the durable tape sees every row from the header on
+    M.tape_dir = a.tape; M.ckpt_every = a.ckpt_every;
+    M.file.reset(new TapeFile()); uint8_t genesis[32] = {0};
+    if (!M.file->open_for_append(M.tape_dir, alphabet_hash(), 0, genesis)) { std::fprintf(stderr, "cannot open the tape at %s\n", a.tape); exit(3); }
+    R.tape.sink = M.file.get();
+  }
   // ---- PHASE 0/1: the boundary log and the warm history. Nobody uses anything.
   run_human(R, warm_days);
-  out.C = compile_from_tape(R.tape, R.w.NC, a.seed, true);
+  M.C = compile_from_tape(R.tape, R.w.NC, a.seed, true);
 
   // ---- PHASE 2: the resident, compiled, not yet acting; the judges behind the
   // port; the governor with the salt and the empty licence table keyed to the judge
-  PlantStore store(&R.w);
-  PlantJudge resident_judge = make_resident_judge(&R.w);
-  PlantJudge frontier = make_frontier_judge(&R.w);
-  NullJudge null_judge; RulesJudge rules_judge;
-  Judge& judge = judge_override ? *judge_override
-               : !strcmp(a.judge, "null") ? (Judge&)null_judge : !strcmp(a.judge, "rules") ? (Judge&)rules_judge : (Judge&)resident_judge;
-  Resident res;
-  res.init(R.w.NC, R.f.size(), out.C, R.f.writ, a.seed);
-  Governor gov;
-  gov.init(R.w.NC, R.f.writ, out.C.arrivals_per_day, alphabet_hash(), judge.hash(), out.C.template_hash);
-  gov.lie_band_dependent = (a.lie == 19);
-  out.judge_hash = judge.hash();
+  M.make_judges(judge_override);
+  M.res.init(R.w.NC, R.f.size(), M.C, R.f.writ, a.seed);
+  M.gov.init(R.w.NC, R.f.writ, M.C.arrivals_per_day, alphabet_hash(), M.judge->hash(), M.C.template_hash);
+  M.gov.lie_band_dependent = (a.lie == 19);
 
   // ---- PHASE 3: REPLAY. The fast grader, on its own support.
   double t0 = now_s();
-  out.RP = replay(R.L, R.f, res.fd, out.C, gov.lad, R.f.writ, store, judge);
-  out.replay_ms = (now_s() - t0) * 1000.0;
-  for (int c = 0; c < R.w.NC; ++c) out.C.coverage[c] = out.RP.coverage[c];
-  res.C.coverage = out.C.coverage;                          // the resident reads with the measured coverage from here on
-  out.hist_licensed = gov.license_from_history(out.RP, (uint32_t)warm_days, R.tape);
+  M.RP = replay(R.L, R.f, M.res.fd, M.C, M.gov.lad, R.f.writ, M.store, *M.judge);
+  M.replay_ms = (now_s() - t0) * 1000.0;
+  for (int c = 0; c < R.w.NC; ++c) M.C.coverage[c] = M.RP.coverage[c];
+  M.res.C.coverage = M.C.coverage;                          // the resident reads with the measured coverage from here on
+  M.hist_licensed = M.gov.license_from_history(M.RP, (uint32_t)warm_days, R.tape);
 
   // ---- PHASE 4+: live. Both the remaining humans and the resident, on one world.
-  auto rep = reports_of(R.f);
   t0 = now_s();
-  // D0: the loop is the world port's. Intake lands, a TICK is folded, and the
-  // machine runs its period on the day the ledger now says; it is never told.
-  for (int d = warm_days; d < total_days; ++d) {
-    world_arrive(R.w, R.L, R.tape, (uint32_t)d);                                   // intake lands
-    tick_fold(R.tape, R.L, (uint32_t)d);                                           // the clock is a row; the ledger's day moves
-    gov.draw_strata(R.L, R.tape);                                                  // the governor draws first
-    res.period(R.L, R.f, R.tape, store, judge, frontier, gov.lad);                 // the resident goes next: it never sleeps
-    human_day(R.w, R.L, R.f, R.tape, R.hs, rep, (uint32_t)d);
-    const size_t settled_from = R.tape.size();
-    world_settle(R.w, R.L, R.f, R.tape, (uint32_t)d);
-    gov.grade(R.tape, settled_from);                                               // the governor folds the day's OUTCOME rows
-    res.grade(R.L, judge, frontier);                                               // the field learns; the judges are told
-    gov.step(R.L.day, res.sup, R.tape);                                            // the ladder moves, as rows
-    ++out.periods;
-  }
-  out.period_ms = (now_s() - t0) * 1000.0 / std::max(1, out.periods);
-  out.lad = gov.lad; out.ms = res.st;
-  out.res = residual_of(gov.lad, out.C);
-  out.arm = score_arm(R.L, R.f);
+  M.loop(warm_days);
+  AutoOut out = M.finish(t0);
+  if (M.file) { R.tape.sink = nullptr; M.file->close(); }
   (void)verbose;
   return out;
 }
 
+// D1: RESTORE. Load the durable tape, find the newest valid checkpoint, cut the
+// tape back to its cursor (the period in flight is re-run; a real lane
+// re-ingests it from the source's own cursor), put a NOTE row on the tape naming
+// what was dropped, and continue. `accept_torn` is O18's lie. Returns false if
+// the tape or the checkpoint cannot be trusted.
+struct RestoreInfo { size_t rows_on_disk = 0, cursor = 0, dropped_rows = 0; uint64_t torn_bytes = 0; uint32_t day = 0; bool ok = false; };
+static bool run_machine_resume(const Args& a, Run& R, int warm_days, int total_days, AutoOut& out, RestoreInfo& info, bool lie_keep_inflight = false) {
+  MachineRun M(a, R, warm_days, total_days);
+  M.tape_dir = a.tape; M.ckpt_every = a.ckpt_every;
+  Recovered rec;
+  if (!tape_load(M.tape_dir, R.tape, rec, false)) { std::fprintf(stderr, "the tape at %s cannot be read\n", a.tape); return false; }
+  if (rec.pin != alphabet_hash()) { std::fprintf(stderr, "the tape's pin differs from this binary's\n"); return false; }
+  info.rows_on_disk = R.tape.size(); info.torn_bytes = rec.torn_bytes;
+  M.make_judges(nullptr);
+  R.init_ledger(); R.hs.init(R.w.NC);
+  const CkptInfo ck = ckpt_find_and_read(M.tape_dir, (uint32_t)total_days, R.tape.size(), [&](Des& d) {
+    des(d, R.L); des(d, R.hs); des(d, R.f); d.pod(R.tape.last_tick_at);
+    des(d, M.res); des(d, M.gov); des(d, *M.resident_judge); des(d, *M.frontier);
+    des(d, M.C); des(d, M.RP); d.pod(M.hist_licensed); d.pod(M.replay_ms); d.pod(M.periods);
+  });
+  if (!ck.valid) { std::fprintf(stderr, "no valid checkpoint under %s\n", a.tape); return false; }
+  // the chain at the cursor must be the head the checkpoint saw
+  uint8_t at[32]; R.tape.head_at((long)ck.cursor - 1, at);
+  if (memcmp(at, ck.head, 32) != 0) { std::fprintf(stderr, "the tape's chain at the cursor differs from the checkpoint's\n"); return false; }
+  info.cursor = ck.cursor; info.day = ck.day; info.dropped_rows = R.tape.size() - ck.cursor;
+  // THE LIE (O18): a restore that keeps the rows of the period in flight and
+  // re-runs it on top of them. Everything after the cursor was uncommitted.
+  const size_t keep = lie_keep_inflight ? R.tape.size() : (size_t)ck.cursor;
+  R.tape.truncate(keep);
+  M.file.reset(new TapeFile());
+  if (!M.file->cut_to(M.tape_dir, keep)) { std::fprintf(stderr, "the tape at %s cannot be cut to its cursor\n", a.tape); return false; }
+  if (!M.file->open_for_append(M.tape_dir, alphabet_hash(), keep, R.tape.head)) return false;
+  R.tape.sink = M.file.get();
+  // the NOTE: code 1 = a restore; b = complete rows dropped; value = bytes of the torn record
+  R.tape.put(R_NOTE, ck.day, 0, 0, -3, ARM_GOVERNOR, 1, (int)info.dropped_rows, 0.f, (float)info.torn_bytes, 0, RF_TORN_OR_SURVEY);
+  const double t0 = now_s();
+  M.loop((int)ck.day + 1);
+  out = M.finish(t0);
+  R.tape.sink = nullptr; M.file->close();
+  info.ok = true;
+  return true;
+}
+
 static int cmd_automate(const Args& a) {
   Run R; R.f = build_acme(a.n, a.span, a.seed); R.w = make_world(a.seed); R.w.demand_scale = a.demand;
+  g_dump_dir = a.dump;
+  if (a.resume) {                                            // D1: continue from the durable tape's newest checkpoint
+    if (!a.tape) { std::fprintf(stderr, "--resume needs --tape DIR\n"); return 2; }
+    AutoOut A; RestoreInfo ri;
+    rule("RESTORE");
+    if (!run_machine_resume(a, R, a.warm, a.days, A, ri)) return 3;
+    std::printf("  tape %s: %zu rows on disk, %llu bytes torn, restored at day %u (cursor %zu), %zu rows of the period in flight dropped\n",
+                a.tape, ri.rows_on_disk, (unsigned long long)ri.torn_bytes, ri.day, ri.cursor, ri.dropped_rows);
+    std::printf("  continued to day %d: %zu rows, chain %s\n", a.days, R.tape.size(), R.tape.verify() < 0 ? "VERIFIED" : "BROKEN");
+    if (a.dump) dump_write(a.dump, R.tape, R.L, R.f, R.w, &A.C, &A.lad, &A.ms, &A.res, a.n, a.span, a.seed, a.demand, a.days, a.warm);
+    return 0;
+  }
   rule("PHASE 0-1 · INSTRUMENT THE BOUNDARY, THEN WATCH");
   std::printf("  Change data capture off the systems of record into one hash-chained tape:\n"
               "  events in, effects out, outcomes when they land. NEVER the interior. The\n"
@@ -328,6 +452,8 @@ static int cmd_automate(const Args& a) {
               "  day, regardless of how good the model looks. That is the only meter in this\n"
               "  program that can fail while every other number improves.\n");
   print_minutes_by_via(minutes_by_via(R.tape, R.L), "the resident arm, warm period included");
+  print_path_length(path_length(R.tape, R.L), "the resident arm");
+  print_frontier_bill(R.tape, R.w.NC);
 
   rule("PHASE 6 · THE CASCADE — THE MIDDLE LEAVES BY ARITHMETIC");
   // the panel is the plant's to build (the firm at the sizes it has been) and
@@ -376,6 +502,7 @@ static int cmd_automate(const Args& a) {
   std::printf("\n  tape %zu rows, chain %s.  resident period %.2f ms over %d periods.\n",
               R.tape.size(), R.tape.verify() < 0 ? "VERIFIED" : "BROKEN", A.period_ms, A.periods);
   print_row_histogram(R.tape);
+  if (a.dump) dump_write(a.dump, R.tape, R.L, R.f, R.w, &A.C, &A.lad, &A.ms, &A.res, a.n, a.span, a.seed, a.demand, a.days, a.warm);
   return 0;
 }
 
@@ -421,6 +548,8 @@ static int cmd_twin(const Args& a) {
   // §9.3: what bought the queue. The same fold on both arms' tapes.
   print_minutes_by_via(minutes_by_via(A.tape, A.L), "the incumbent arm");
   print_minutes_by_via(minutes_by_via(B.tape, B.L), "the resident arm");
+  print_path_length(path_length(A.tape, A.L), "the incumbent arm");
+  print_path_length(path_length(B.tape, B.L), "the resident arm");
 
   // THE BIAS OF THE CANARY ESTIMATOR
   CanaryBias cb;
@@ -739,6 +868,69 @@ static int cmd_selftest(const Args& a) {
       const bool ok = (df >= 6) && (chi2 < crit);
       snprintf(buf, sizeof buf, "(chi-square %.1f on %d class-band cells against a 99.9%% point of %.1f)", chi2, df, crit);
       ck(LIE == 19 ? !ok : ok, "O21  the canary draw is independent of the machine's band", buf);
+    }
+    // --- O18: A KILL SURVIVES. The short automate to a durable tape with a
+    //          checkpoint every ten periods; then the files as a dying process
+    //          leaves them (the last segment cut mid-record, the newest
+    //          checkpoint's meta missing: in flight); then a restore and the run
+    //          continued to the end. Required: the chain verifies from genesis,
+    //          the NOTE names what was dropped, the continued run's rows equal
+    //          the unkilled run's row for row (NOTE rows aside) and its ledger is
+    //          the cold fold of its own tape. The lie: a restore that keeps the
+    //          rows of the period in flight and re-runs it on top of them.
+    {
+      const std::string dir = std::string(P_tmpdir) + "/acme_o18_" + std::to_string((unsigned long long)aa.seed) + "_" + std::to_string(LIE);
+      auto wipe = [&](const std::string& d) {
+        for (uint32_t s2 = 0; s2 < 64; ++s2) std::remove(seg_path(d, s2).c_str());
+        for (int day = 0; day <= 400; ++day) { std::remove((ckpt_base(d, (uint32_t)day) + ".state").c_str()); std::remove((ckpt_base(d, (uint32_t)day) + ".meta").c_str()); }
+        std::remove((d + "/tape.meta.json").c_str()); std::remove((d + "/ckpt").c_str()); std::remove(d.c_str());
+      };
+      wipe(dir);
+      Args at = aa; at.tape = dir.c_str(); at.ckpt_every = 10;
+      Run U; U.f = build_acme(200, 7, 7); U.w = make_world(7); U.w.demand_scale = 1.5f;
+      const AutoOut ou = run_machine(at, U, at.warm, at.days, false);          // the unkilled run, and the files
+      (void)ou;
+      // the kill, as the files would be found: the process died 1,000 rows and 17
+      // bytes into the periods after checkpoint k[-2], while checkpoint k[-2]'s
+      // meta had not yet been renamed into place (in flight); checkpoint k[-1]
+      // never existed. The restore must find k[-3].
+      std::vector<uint32_t> cps;
+      for (int day = 0; day <= at.days; ++day) { uint64_t sz; if (file_size_of(ckpt_base(dir, (uint32_t)day) + ".meta", sz)) cps.push_back((uint32_t)day); }
+      const bool enough_ckpts = cps.size() >= 3;
+      const uint32_t k_never = enough_ckpts ? cps[cps.size() - 1] : 0, k_inflight = enough_ckpts ? cps[cps.size() - 2] : 0, k_restore = enough_ckpts ? cps[cps.size() - 3] : 0;
+      uint64_t inflight_cursor = 0;
+      if (enough_ckpts) { CkptInfo ci = ckpt_find_and_read(dir, k_inflight, U.tape.size(), [&](Des&) {}); inflight_cursor = ci.cursor; }
+      const size_t cut_rows = (size_t)inflight_cursor + 1000;
+      const uint32_t cut_seg = (uint32_t)(cut_rows / SEG_ROWS);
+      truncate_file(seg_path(dir, cut_seg), sizeof(SegHeader) + (cut_rows - (size_t)cut_seg * SEG_ROWS) * sizeof(Rec) + 17);
+      for (uint32_t s2 = cut_seg + 1; s2 < 64; ++s2) std::remove(seg_path(dir, s2).c_str());
+      std::remove((ckpt_base(dir, k_never) + ".state").c_str()); std::remove((ckpt_base(dir, k_never) + ".meta").c_str());
+      std::remove((ckpt_base(dir, k_inflight) + ".meta").c_str());                   // in flight when the process died
+      // the restore and the continued run
+      Args ar = at; ar.resume = true;
+      Run K; K.f = build_acme(200, 7, 7); K.w = make_world(7); K.w.demand_scale = 1.5f;
+      AutoOut ok_; RestoreInfo ri;
+      const bool restored = enough_ckpts && run_machine_resume(ar, K, ar.warm, ar.days, ok_, ri, LIE == 20);
+      bool same_rows = restored && ri.day == k_restore && ri.torn_bytes == 17;
+      long notes = 0, first_diff = -1; int first_type = -1;
+      if (restored) {
+        std::vector<Rec> kept; kept.reserve(K.tape.size());
+        for (const Rec& r : K.tape.rec) { if (r.type == R_NOTE && (r.flags & RF_TORN_OR_SURVEY)) { ++notes; continue; } kept.push_back(r); }
+        same_rows = same_rows && kept.size() == U.tape.size() && memcmp(kept.data(), U.tape.rec.data(), kept.size() * sizeof(Rec)) == 0;
+        if (!same_rows) { const size_t n = std::min(kept.size(), U.tape.size());
+          for (size_t i = 0; i < n; ++i) if (memcmp(&kept[i], &U.tape.rec[i], sizeof(Rec)) != 0) { first_diff = (long)i; first_type = kept[i].type; break; }
+          if (first_diff < 0 && kept.size() != U.tape.size()) first_diff = (long)n; }
+      }
+      const bool chain_ok = restored && K.tape.verify() < 0;
+      long folddiff = -1;
+      if (restored) { const Ledger F = Ledger::fold(K.tape, K.w.NC); folddiff = ledger_diff(F, K.L).fields; }
+      const bool ok = restored && same_rows && chain_ok && folddiff == 0 && notes == 1;
+      char diffs[96] = {0};
+      if (first_diff >= 0) snprintf(diffs, sizeof diffs, "; first differing row %ld (%s)", first_diff, rec_type_name(first_type));
+      snprintf(buf, sizeof buf, "(cut at row %zu + 17 bytes with checkpoint %u in flight; restored at day %u, %zu rows dropped; continued run: %zu rows, chain %s, %ld fold diffs, rows %s the unkilled run's%s)",
+               cut_rows, k_inflight, ri.day, ri.dropped_rows, K.tape.size(), chain_ok ? "verified" : "BROKEN", folddiff, same_rows ? "equal" : "DIFFER from", diffs);
+      ck(LIE == 20 ? !ok : ok, "O18  a kill survives: the durable tape reopens, the checkpoint restores, the run continues bit for bit", buf);
+      wipe(dir);
     }
   }
 

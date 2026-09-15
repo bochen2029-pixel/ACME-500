@@ -1,0 +1,30 @@
+/root/acme_v2/T:
+total 85152
+drwxr-xr-x  3 root root     4096 Sep 14 23:37 .
+drwxr-xr-x 16 root root     4096 Sep 14 23:37 ..
+drwxr-xr-x  2 root root     4096 Sep 14 23:37 ckpt
+-rw-r--r--  1 root root 40000064 Sep 14 23:36 seg-000000.tape
+-rw-r--r--  1 root root 40000064 Sep 14 23:37 seg-000001.tape
+-rw-r--r--  1 root root  7169064 Sep 14 23:37 seg-000002.tape
+-rw-r--r--  1 root root      391 Sep 14 23:37 tape.meta.json
+
+/root/acme_v2/T/ckpt:
+total 203532
+drwxr-xr-x 2 root root     4096 Sep 14 23:37 .
+drwxr-xr-x 3 root root     4096 Sep 14 23:37 ..
+-rw-r--r-- 1 root root      209 Sep 14 23:36 000189.meta
+-rw-r--r-- 1 root root 22642277 Sep 14 23:36 000189.state
+-rw-r--r-- 1 root root      209 Sep 14 23:37 000199.meta
+-rw-r--r-- 1 root root 23778869 Sep 14 23:37 000199.state
+-rw-r--r-- 1 root root      209 Sep 14 23:37 000209.meta
+-rw-r--r-- 1 root root 24619093 Sep 14 23:37 000209.state
+-rw-r--r-- 1 root root      209 Sep 14 23:37 000219.meta
+-rw-r--r-- 1 root root 25616617 Sep 14 23:37 000219.state
+-rw-r--r-- 1 root root      209 Sep 14 23:37 000229.meta
+-rw-r--r-- 1 root root 26566933 Sep 14 23:37 000229.state
+-rw-r--r-- 1 root root      209 Sep 14 23:37 000239.meta
+-rw-r--r-- 1 root root 27487877 Sep 14 23:37 000239.state
+-rw-r--r-- 1 root root      209 Sep 14 23:37 000249.meta
+-rw-r--r-- 1 root root 28437301 Sep 14 23:37 000249.state
+-rw-r--r-- 1 root root      209 Sep 14 23:37 000259.meta
+-rw-r--r-- 1 root root 29211217 Sep 14 23:37 000259.state
