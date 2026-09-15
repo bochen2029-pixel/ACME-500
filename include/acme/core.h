@@ -292,8 +292,16 @@ struct Tape {
 // table to pass oracle O-COMPILE.
 //
 // Each class carries only what a person could write in one line: which wire,
-// how many systems of record hold its determinants, how long the world takes to
-// answer, its base rate of a bad outcome, and whether it is reversible.
+// how long the world takes to answer, its base rate of a bad outcome, its
+// nominal arrival rate and value, and whether it is reversible, reserved to a
+// signature, or contested by a counterparty who demands a person.
+//
+// C1: THE SCHEMA IS AUTHORED AND THE PLANTED IS NOT HERE. How many systems of
+// record hold a class's determinants and what fraction of its round trip is
+// real judgement are facts of the synthetic world, held by the plant
+// (world.h, `planted(c)`) and never by cls_spec(). The compile step must
+// recover both from the tape (O6, O13); the kernel's translation unit cannot
+// name them (O17).
 // ----------------------------------------------------------------------------
 enum Wire { W_Q2C = 0, W_CLAIMS, W_PROCURE, W_HR, W_FIN, W_COMPLY, W_N };
 inline const char* wire_name(int w) {
@@ -304,51 +312,47 @@ inline const char* wire_name(int w) {
 struct ClassSpec {
   const char* name;
   uint8_t wire;
-  uint8_t n_systems;      // how many systems of record hold this class's determinants
   uint8_t verdict_latency;// days until the world grades it
-  float   base_rate;      // P(bad outcome) under competent handling — sets n0
-  float   arrival_per_day;// expected new obligations per day, firm-wide
+  float   base_rate;      // P(bad outcome) under competent handling — the prior for n0
+  float   arrival_per_day;// nominal new obligations per day, firm-wide (the kernel measures the actual rate from ARRIVE rows)
   float   value;          // money at stake per instance
-  float   decide_frac;    // PLANTED TRUTH: fraction of the round trip that is real judgment.
-                          // The compile step must MEASURE this; it is never shown the number.
   uint8_t reversible;     // 1 = the effect carries a usable inverse
   uint8_t warrant;        // 1 = a signature is legally reserved. Never automatable, at any capability.
+  uint8_t counterparty;   // 1 = the other side demands a person. A commercial fact, authored; does not move.
 };
 
-// n_systems is the round-trip cost driver: every system is a fetch a human must
-// do by hand through a UI, and the fetches are most of the day.
 inline const ClassSpec* schema(int& n) {
   static const ClassSpec S[] = {
     // ---- quote-to-cash ----
-    { "quote.price",          W_Q2C,    4,  21, 0.06f, 34.0f,  18000, 0.22f, 1, 0 },
-    { "quote.approve.disc",   W_Q2C,    3,  21, 0.05f, 12.0f,  26000, 0.30f, 1, 0 },
-    { "order.credit.check",   W_Q2C,    3,  30, 0.04f, 28.0f,  15000, 0.14f, 1, 0 },
-    { "order.fulfil.sched",   W_Q2C,    5,   7, 0.09f, 41.0f,   9000, 0.11f, 1, 0 },
-    { "invoice.issue",        W_Q2C,    2,  45, 0.02f, 47.0f,  15000, 0.04f, 1, 0 },
-    { "collections.chase",    W_Q2C,    3,  14, 0.11f, 22.0f,  12000, 0.09f, 1, 0 },
-    { "dispute.resolve",      W_Q2C,    5,  30, 0.18f,  6.0f,  31000, 0.41f, 1, 0 },
+    { "quote.price",           W_Q2C,     21, 0.06f, 34.0f,  18000, 1, 0, 0 },
+    { "quote.approve.disc",    W_Q2C,     21, 0.05f, 12.0f,  26000, 1, 0, 0 },
+    { "order.credit.check",    W_Q2C,     30, 0.04f, 28.0f,  15000, 1, 0, 0 },
+    { "order.fulfil.sched",    W_Q2C,      7, 0.09f, 41.0f,   9000, 1, 0, 0 },
+    { "invoice.issue",         W_Q2C,     45, 0.02f, 47.0f,  15000, 1, 0, 0 },
+    { "collections.chase",     W_Q2C,     14, 0.11f, 22.0f,  12000, 1, 0, 0 },
+    { "dispute.resolve",       W_Q2C,     30, 0.18f,  6.0f,  31000, 1, 0, 0 },
     // ---- claims ----
-    { "claim.intake.triage",  W_CLAIMS, 3,   5, 0.07f, 55.0f,   4000, 0.12f, 1, 0 },
-    { "claim.coverage.det",   W_CLAIMS, 5,  20, 0.09f, 38.0f,  22000, 0.35f, 1, 0 },
-    { "claim.reserve.set",    W_CLAIMS, 4,  60, 0.13f, 31.0f,  40000, 0.28f, 1, 0 },
-    { "claim.settle.auth",    W_CLAIMS, 4,  30, 0.08f, 19.0f,  55000, 0.24f, 0, 1 },
-    { "claim.fraud.refer",    W_CLAIMS, 6,  90, 0.21f,  4.0f,  70000, 0.52f, 1, 0 },
+    { "claim.intake.triage",   W_CLAIMS,   5, 0.07f, 55.0f,   4000, 1, 0, 0 },
+    { "claim.coverage.det",    W_CLAIMS,  20, 0.09f, 38.0f,  22000, 1, 0, 0 },
+    { "claim.reserve.set",     W_CLAIMS,  60, 0.13f, 31.0f,  40000, 1, 0, 0 },
+    { "claim.settle.auth",     W_CLAIMS,  30, 0.08f, 19.0f,  55000, 0, 1, 0 },
+    { "claim.fraud.refer",     W_CLAIMS,  90, 0.21f,  4.0f,  70000, 1, 0, 1 },
     // ---- procurement ----
-    { "po.match.3way",        W_PROCURE,3,  10, 0.03f, 63.0f,   8000, 0.05f, 1, 0 },
-    { "vendor.onboard",       W_PROCURE,5,  45, 0.10f,  3.0f,  12000, 0.33f, 1, 0 },
-    { "contract.renew",       W_PROCURE,4,  60, 0.12f,  5.0f,  90000, 0.38f, 0, 1 },
-    { "spend.approve",        W_PROCURE,2,  30, 0.05f, 26.0f,  20000, 0.16f, 1, 0 },
+    { "po.match.3way",         W_PROCURE, 10, 0.03f, 63.0f,   8000, 1, 0, 0 },
+    { "vendor.onboard",        W_PROCURE, 45, 0.10f,  3.0f,  12000, 1, 0, 0 },
+    { "contract.renew",        W_PROCURE, 60, 0.12f,  5.0f,  90000, 0, 1, 0 },
+    { "spend.approve",         W_PROCURE, 30, 0.05f, 26.0f,  20000, 1, 0, 0 },
     // ---- people ----
-    { "req.approve",          W_HR,     3,  60, 0.14f,  4.0f, 120000, 0.31f, 1, 0 },
-    { "candidate.screen",     W_HR,     3,  30, 0.16f, 18.0f,   6000, 0.27f, 1, 0 },
-    { "leave.approve",        W_HR,     2,   7, 0.02f, 15.0f,   1500, 0.03f, 1, 0 },
+    { "req.approve",           W_HR,      60, 0.14f,  4.0f, 120000, 1, 0, 0 },
+    { "candidate.screen",      W_HR,      30, 0.16f, 18.0f,   6000, 1, 0, 0 },
+    { "leave.approve",         W_HR,       7, 0.02f, 15.0f,   1500, 1, 0, 0 },
     // ---- finance ----
-    { "accrual.post",         W_FIN,    3,  30, 0.04f, 24.0f,  17000, 0.08f, 1, 0 },
-    { "recon.break.clear",    W_FIN,    4,  14, 0.08f, 33.0f,   9000, 0.19f, 1, 0 },
-    { "forecast.adjust",      W_FIN,    5,  90, 0.22f,  7.0f,  60000, 0.45f, 1, 0 },
+    { "accrual.post",          W_FIN,     30, 0.04f, 24.0f,  17000, 1, 0, 0 },
+    { "recon.break.clear",     W_FIN,     14, 0.08f, 33.0f,   9000, 1, 0, 0 },
+    { "forecast.adjust",       W_FIN,     90, 0.22f,  7.0f,  60000, 1, 0, 0 },
     // ---- compliance ----
-    { "kyc.review",           W_COMPLY, 4,  30, 0.06f, 21.0f,  11000, 0.20f, 1, 0 },
-    { "reg.filing.prepare",   W_COMPLY, 6,  90, 0.05f,  2.0f, 150000, 0.29f, 0, 1 },
+    { "kyc.review",            W_COMPLY,  30, 0.06f, 21.0f,  11000, 1, 0, 0 },
+    { "reg.filing.prepare",    W_COMPLY,  90, 0.05f,  2.0f, 150000, 0, 1, 0 },
   };
   n = (int)(sizeof(S) / sizeof(S[0]));
   return S;
@@ -362,9 +366,9 @@ inline uint32_t schema_hash() {
   Blake2b b;
   for (int c = 0; c < n; ++c) {
     b.update(S[c].name, strlen(S[c].name));
-    b.update(&S[c].wire, 1); b.update(&S[c].n_systems, 1); b.update(&S[c].verdict_latency, 1);
+    b.update(&S[c].wire, 1); b.update(&S[c].verdict_latency, 1);
     b.update(&S[c].base_rate, 4); b.update(&S[c].arrival_per_day, 4); b.update(&S[c].value, 4);
-    b.update(&S[c].reversible, 1); b.update(&S[c].warrant, 1);
+    b.update(&S[c].reversible, 1); b.update(&S[c].warrant, 1); b.update(&S[c].counterparty, 1);
   }
   uint8_t h[32]; b.final(h);
   return (uint32_t)h[0] | ((uint32_t)h[1] << 8) | ((uint32_t)h[2] << 16) | ((uint32_t)h[3] << 24);

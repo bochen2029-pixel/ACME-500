@@ -30,10 +30,13 @@
 #include "acme/solver.h"
 #include "acme/machine.h"
 #include "acme/ledger.h"
+#include "acme/license.h"
+#include "acme/governor.h"   // the salt, the strata, the ladder: main wires it; the machine never includes it
 #include "acme/report.h"
 #include <cstdio>
 #include <cstring>
 #include <chrono>
+#include <tuple>
 
 using namespace acme;
 
@@ -43,6 +46,8 @@ struct Args {
   float demand = 1.5f;
   uint64_t seed = 20260913;
   bool quiet = false;
+  int budget = -1;          // --budget N: the read budget per period (the writ's default if -1)
+  const char* judge = "plant";   // --judge plant|null|rules: which stub stands behind the port (the gym's sweep, and O16's)
 };
 static Args parse(int argc, char** argv) {
   Args a;
@@ -60,6 +65,8 @@ static Args parse(int argc, char** argv) {
     else if (!strcmp(s, "--lie")) a.lie = next_i(-1);
     else if (!strcmp(s, "--demand")) a.demand = next_f(1.5f);
     else if (!strcmp(s, "--seed")) a.seed = (uint64_t)next_i(20260913);
+    else if (!strcmp(s, "--budget")) a.budget = next_i(-1);
+    else if (!strcmp(s, "--judge")) a.judge = (i + 1 < argc) ? argv[++i] : "plant";
     else if (!strcmp(s, "--quiet")) a.quiet = true;
     else { std::fprintf(stderr, "unknown flag %s\n", s); exit(2); }
   }
@@ -73,6 +80,21 @@ static void rule(const char* t) { std::printf("\n=== %s ", t); for (int i = (int
 // ----------------------------------------------------------------------------
 struct Run { World w; Ledger L; Firm f; Tape tape; HumanStats hs;
              void init_ledger() { L.init(w.NC); } };   // C0: the cells live in the ledger, the plant keeps the truth
+
+// The stub judges: a constant and a rule that never reads the record. O16 stands
+// them behind the port and requires that neither earns a rung; --judge stands
+// them behind a full run, which is the gym's competence sweep at its floor.
+struct NullJudge : Judge {
+  Proposal read(const Frame& f) override { Proposal p; p.choice = 0; p.signal = 0.f; p.completeness_hat = f.coverage_hat; p.judge_hash = hash(); return p; }
+  bool act_coin(int, uint32_t, float) override { return false; }
+  uint32_t hash() const override { return 0x4E554C4Cu; }   // 'NULL'
+};
+struct RulesJudge : Judge {                                  // a coin over the frame's id: a rule that ignores the record
+  Proposal read(const Frame& f) override { Proposal p; p.signal = (u01(0x52554C45ULL, 7700, f.oid) < 0.5f) ? 1.2f : -1.2f;
+    p.choice = p.signal > 0.f ? 1 : 0; p.completeness_hat = f.coverage_hat; p.judge_hash = hash(); return p; }
+  bool act_coin(int cls, uint32_t oid, float p) override { return u01(0x52554C45ULL, 7200 + cls, oid) < p; }
+  uint32_t hash() const override { return 0x52554C45u; }   // 'RULE'
+};
 
 // mode * 10 + switch, as the HEADER row carries it: world 0 synthetic · 1 fitted · 2 replay · 3 real;
 // switch 0 off · 1 shadow · 2 live. ACME is (synthetic, live) by construction.
@@ -140,26 +162,42 @@ struct AutoOut {
   long      hist_licensed = 0;
   double    replay_ms = 0, period_ms = 0;
   int       periods = 0;
+  uint32_t  judge_hash = 0;
 };
 
-static AutoOut run_machine(const Args& a, Run& R, int warm_days, int total_days, bool verbose) {
+// C1: the machine, the governor and the two judges, wired by main and never by
+// each other. `judge_override` lets the battery stand a null or a rules judge
+// behind the port (O16); the governor's lie flag is O21's.
+static AutoOut run_machine(const Args& a, Run& R, int warm_days, int total_days, bool verbose,
+                           Judge* judge_override = nullptr) {
   AutoOut out;
+  if (a.budget > 0) R.f.writ.read_budget = a.budget;
   // ---- PHASE 0/1: the boundary log and the warm history. Nobody uses anything.
   run_human(R, warm_days);
   out.C = compile_from_tape(R.tape, R.w.NC, a.seed, true);
 
-  // ---- PHASE 2: the resident, compiled, not yet acting
+  // ---- PHASE 2: the resident, compiled, not yet acting; the judges behind the
+  // port; the governor with the salt and the empty licence table keyed to the judge
+  PlantStore store(&R.w);
+  PlantJudge resident_judge = make_resident_judge(&R.w);
+  PlantJudge frontier = make_frontier_judge(&R.w);
+  NullJudge null_judge; RulesJudge rules_judge;
+  Judge& judge = judge_override ? *judge_override
+               : !strcmp(a.judge, "null") ? (Judge&)null_judge : !strcmp(a.judge, "rules") ? (Judge&)rules_judge : (Judge&)resident_judge;
   Resident res;
-  res.init(R.w.NC, R.f.size(), R.w.demand_scale, out.C, R.f.writ, a.seed);
-  // C0: the machine touches the world through the port only
-  PlantStore store(&R.w); PlantJudge judge(&R.w);
+  res.init(R.w.NC, R.f.size(), out.C, R.f.writ, a.seed);
+  Governor gov;
+  gov.init(R.w.NC, R.f.writ, out.C.arrivals_per_day, alphabet_hash(), judge.hash(), out.C.template_hash);
+  gov.lie_band_dependent = (a.lie == 19);
+  out.judge_hash = judge.hash();
 
   // ---- PHASE 3: REPLAY. The fast grader, on its own support.
   double t0 = now_s();
-  out.RP = replay(R.L, R.f, res.fd, out.C, res.lad, R.f.writ, store, judge);
+  out.RP = replay(R.L, R.f, res.fd, out.C, gov.lad, R.f.writ, store, judge);
   out.replay_ms = (now_s() - t0) * 1000.0;
   for (int c = 0; c < R.w.NC; ++c) out.C.coverage[c] = out.RP.coverage[c];
-  out.hist_licensed = license_from_history(res.lad, out.RP, (uint32_t)warm_days, R.tape);
+  res.C.coverage = out.C.coverage;                          // the resident reads with the measured coverage from here on
+  out.hist_licensed = gov.license_from_history(out.RP, (uint32_t)warm_days, R.tape);
 
   // ---- PHASE 4+: live. Both the remaining humans and the resident, on one world.
   auto rep = reports_of(R.f);
@@ -167,15 +205,19 @@ static AutoOut run_machine(const Args& a, Run& R, int warm_days, int total_days,
   for (int d = warm_days; d < total_days; ++d) {
     R.tape.tick((uint32_t)d);
     world_arrive(R.w, R.L, R.tape, (uint32_t)d);
-    res.period(R.L, R.f, R.tape, (uint32_t)d, store, judge);   // the resident goes first: it never sleeps
+    gov.draw_strata(R.L, R.tape, (uint32_t)d);                                     // the governor draws first
+    res.period(R.L, R.f, R.tape, (uint32_t)d, store, judge, frontier, gov.lad);    // the resident goes next: it never sleeps
     human_day(R.w, R.L, R.f, R.tape, R.hs, rep, (uint32_t)d);
+    const size_t settled_from = R.tape.size();
     world_settle(R.w, R.L, R.f, R.tape, (uint32_t)d);
-    res.grade(R.L, R.f, R.tape, (uint32_t)d);
+    gov.grade(R.tape, settled_from);                                               // the governor folds the day's OUTCOME rows
+    res.grade(R.L, (uint32_t)d, judge, frontier);                                  // the field learns; the judges are told
+    gov.step((uint32_t)d, res.sup, R.tape);                                        // the ladder moves, as rows
     ++out.periods;
   }
   out.period_ms = (now_s() - t0) * 1000.0 / std::max(1, out.periods);
-  out.lad = res.lad; out.ms = res.st;
-  out.res = residual_of(res.lad, R.w.demand_scale, out.C);
+  out.lad = gov.lad; out.ms = res.st;
+  out.res = residual_of(gov.lad, out.C);
   out.arm = score_arm(R.L, R.f);
   (void)verbose;
   return out;
@@ -196,10 +238,10 @@ static int cmd_automate(const Args& a) {
   std::printf("  %-22s %5s %5s  %8s %8s   %s\n", "class", "sys^", "sys", "cover^", "cover", "decide-fraction (measured)");
   int exact = 0;
   for (int c = 0; c < R.w.NC; ++c) {
-    if (A.C.n_systems[c] == cls_spec(c).n_systems) ++exact;
+    if (A.C.n_systems[c] == planted(c).n_systems) ++exact;
     if (c % 4) continue;
     std::printf("  %-22s %5d %5d  %8.3f %8.3f   %.3f\n", cls_spec(c).name,
-                A.C.n_systems[c], cls_spec(c).n_systems, A.C.coverage[c], 1.f - R.w.tacit[c], A.C.decide_frac[c]);
+                A.C.n_systems[c], planted(c).n_systems, A.C.coverage[c], 1.f - R.w.tacit[c], A.C.decide_frac[c]);
   }
   std::printf("  join graph recovered exactly on %d of %d classes.\n", exact, R.w.NC);
   auto inv = mine_invariants(R.tape, R.L, R.w.NC);
@@ -229,6 +271,8 @@ static int cmd_automate(const Args& a) {
   std::printf("  estimated mean coverage %.3f against a planted truth of %.3f (error %+.3f).\n",
               ce / R.w.NC, ct / R.w.NC, (ce - ct) / R.w.NC);
   std::printf("  %ld class-bands licensed to rung 1 by history alone, in the time that replay took.\n", A.hist_licensed);
+  std::printf("  the licence table is keyed to judge 0x%08x under schema pin 0x%08x; a judge with another hash reads rung 0.\n",
+              A.lad.judge_hash, A.lad.schema_pin);
 
   rule("PHASE 4 · THE LADDER — CLIMBING ON ARRIVALS ONLY");
   std::printf("  n_act is the WAGER (unattended acts, the only outcomes that widen a licence);\n"
@@ -266,6 +310,15 @@ static int cmd_automate(const Args& a) {
   std::printf("\n  the gate's refusal reasons, which are the only vocabulary it has:\n");
   for (int r = 0; r < RS_N; ++r) if (A.ms.reason_count[r])
     std::printf("    %-24s %10llu\n", reason_name(r), (unsigned long long)A.ms.reason_count[r]);
+  std::printf("\n  THE READ BUDGET — %d Judge::read calls a period, the memo keyed on the frame:\n", R.f.writ.read_budget);
+  std::printf("    reads %.0f a period (%.0f fresh, %.0f floor re-reads)   carried forward from the memo %.0f a period\n"
+              "    held as UNREAD %.0f a period   forgone dual %.1f%% of the field's own prices   (the budget bound in %d of %d periods)\n",
+              (double)A.ms.reads / std::max(1, A.ms.periods), (double)A.ms.reads_fresh / std::max(1, A.ms.periods),
+              (double)A.ms.reads_floor / std::max(1, A.ms.periods), (double)A.ms.memo_hits / std::max(1, A.ms.periods),
+              (double)A.ms.unread / std::max(1, A.ms.periods), 100.0 * A.ms.forgone_dual / std::max(1e-9, A.ms.total_dual),
+              A.ms.budget_bound, A.ms.periods);
+  std::printf("    frontier reads %.0f a period, re-rented for the same cell each period until the counsel memo of step E (F12)\n",
+              A.ms.frontier_calls / std::max(1, A.ms.periods));
   std::printf("\n  KAPPA — supervision created over supervision removed: %.3f\n", A.ms.kappa());
   std::printf("  (%.0fk minutes of human review caused, %.0fk minutes of human work removed)\n",
               A.ms.sup_created_min / 1000.0, A.ms.sup_removed_min / 1000.0);
@@ -275,10 +328,15 @@ static int cmd_automate(const Args& a) {
   print_minutes_by_via(minutes_by_via(R.tape, R.L), "the resident arm, warm period included");
 
   rule("PHASE 6 · THE CASCADE — THE MIDDLE LEAVES BY ARITHMETIC");
-  const Cascade cs = fit_cascade(a.span, a.seed);
+  // the panel is the plant's to build (the firm at the sizes it has been) and
+  // the report's to fit; the planted alpha and F never reach the report
+  std::vector<CascadePoint> panel; PlantedFirm pf;
+  for (int n = 430; n <= 580; n += 25) { const Firm g = build_acme(n, a.span, a.seed, &pf);
+    panel.push_back({ (double)(g.count_fn(FN_E) + g.count_fn(FN_WARRANT)), (double)g.size() }); }
+  const Cascade cs = fit_cascade(panel);
   std::printf("  fitted from %d points of the firm's own payroll against its order book:\n", cs.n_points);
   std::printf("    with an intercept:   alpha = %.3f, F = %.1f      (planted: alpha = %.3f, F = %.1f)\n",
-              cs.alpha_hat, cs.F_hat, cs.alpha_true, cs.F_true);
+              cs.alpha_hat, cs.F_hat, pf.alpha_true, pf.F_true);
   std::printf("    through the origin:  alpha = %.3f, F = 0        <- the usual ratio analysis\n", cs.alpha_naive);
   const double E_now = R.f.count_fn(FN_E) + R.f.count_fn(FN_WARRANT);
   const double licensed_frac = A.res.total > 0 ? A.res.licensed / A.res.total : 0.0;
@@ -593,6 +651,7 @@ static int cmd_selftest(const Args& a) {
           case R_EFFECT:   if (r.seat != -1 || r.arm != ARM_MACHINE || r.prov != PROV_M || r.via < 1 || r.via > 4) shape_fail(r, "via"); break;
           case R_OUTCOME:  if (r.seat == -2 || r.a < OK_GOOD || r.a > OK_BAD || r.b != r.via || (r.arm == ARM_MACHINE) != (r.seat == -1)) shape_fail(r, "decider/kind/via"); break;
           case R_LICENSE: case R_KAPPA: if (r.seat != -3 || r.arm != ARM_GOVERNOR) shape_fail(r, "governor"); break;
+          case R_STRATUM:  if (r.seat != -3 || r.arm != ARM_GOVERNOR || r.a < 0 || r.a > 3 || r.oid == 0) shape_fail(r, "stratum"); break;
           default: break;
         }
         ++n;
@@ -611,6 +670,73 @@ static int cmd_selftest(const Args& a) {
       const long bad = ladder_diff(LF, oa.lad);
       snprintf(buf, sizeof buf, "(%zu class-bands; %ld count diffs against the live ladder)", LF.lic.size(), bad);
       ck(LIE == 16 ? !(bad == 0) : (bad == 0), "O15  the ladder is a fold of OUTCOME rows: counts rebuilt == live", buf);
+    }
+    // --- O16: A NULL JUDGE AND A RULES JUDGE LICENSE NOTHING. A judge that
+    //          ignores the record must earn no rung: not from history, where a
+    //          coin agrees with the firm on half of everything at the firm's own
+    //          good rate (the admission needs agreement beyond chance, F22), and
+    //          not from the wager. The lie is a truth-reading judge under the
+    //          null's name.
+    {
+      NullJudge nj; RulesJudge rj;
+      Run N_; N_.f = build_acme(200, 7, 7); N_.w = make_world(7); N_.w.demand_scale = 1.5f;
+      Run Rr; Rr.f = build_acme(200, 7, 7); Rr.w = make_world(7); Rr.w.demand_scale = 1.5f;
+      PlantJudge liar = make_resident_judge(&N_.w); liar.id_hash = 0x4E554C4Cu;   // THE LIE: the plant's reader, named NULL
+      const AutoOut on = run_machine(aa, N_, aa.warm, aa.days, false, LIE == 18 ? (Judge*)&liar : (Judge*)&nj);
+      const AutoOut orr = run_machine(aa, Rr, aa.warm, aa.days, false, &rj);
+      auto licensed = [&](const AutoOut& o, const Tape& t) {
+        int top = 0; long acts = 0, lic_rows = 0;
+        for (const Lic& L : o.lad.lic) { top = std::max(top, L.rung); acts += L.n_machine; }
+        for (const Rec& r : t.rec) if (r.type == R_LICENSE) ++lic_rows;
+        return std::make_tuple(top, acts, lic_rows); };
+      const auto n_ = licensed(on, N_.tape); const auto r_ = licensed(orr, Rr.tape);
+      const bool null_ok  = std::get<0>(n_) == 0 && std::get<2>(n_) == 0;
+      const bool rules_ok = std::get<0>(r_) == 0 && std::get<2>(r_) == 0;
+      const bool ok = null_ok && rules_ok;
+      snprintf(buf, sizeof buf, "(null judge: top rung %d, %ld LICENSE rows, %ld wager outcomes; rules judge: top rung %d, %ld rows, %ld outcomes)",
+               std::get<0>(n_), std::get<2>(n_), std::get<1>(n_), std::get<0>(r_), std::get<2>(r_), std::get<1>(r_));
+      ck(LIE == 18 ? !ok : ok, "O16  a null judge and a rules judge license nothing, from history or the wager", buf);
+    }
+    // --- O21: THE CANARY DRAW IS INDEPENDENT OF EVERY MACHINE FEATURE. From the
+    //          STRATUM rows joined to each cell's proposal band, a chi-square
+    //          against the rates the governor drew at; the lie is a draw that
+    //          depends on the band.
+    {
+      Args ac = aa; ac.lie = (LIE == 19) ? 19 : -1;
+      Run Cc; Cc.f = build_acme(200, 7, 7); Cc.w = make_world(7); Cc.w.demand_scale = 1.5f;
+      const AutoOut oc = run_machine(ac, Cc, ac.warm, ac.days, false);
+      (void)oc;
+      const int NCc = Cc.w.NC;
+      // one trial per cell, the draw BEFORE the feature: the governor drew the cell's
+      // stratum at the start of the period in which the judge first read it, so the
+      // draw cannot have seen the band the proposal then landed in. The canary
+      // probability of that trial is (1 - audit rate) x canary rate, audit taking
+      // precedence, both rates on the STRATUM row the governor wrote.
+      struct Drawn { uint32_t day = 0; uint8_t kind = 0; float rc = 0.f, ra = 0.f; bool valid = false; };
+      std::vector<Drawn> drawn; std::vector<uint8_t> counted;
+      std::vector<double> O((size_t)NCc * NBAND, 0.0), E((size_t)NCc * NBAND, 0.0), Ncell((size_t)NCc * NBAND, 0.0);
+      for (const Rec& r : Cc.tape.rec) {
+        if (r.oid == 0) continue;
+        if (r.oid >= drawn.size()) { drawn.resize((size_t)r.oid + 1024, Drawn{}); counted.resize((size_t)r.oid + 1024, 0); }
+        if (r.type == R_STRATUM) { Drawn& d = drawn[r.oid]; d.day = r.day; d.kind = (uint8_t)r.a; d.rc = (float)r.b * 1e-6f; d.ra = r.value; d.valid = true; }
+        if (r.type == R_PROPOSAL && !counted[r.oid] && r.cls < NCc) {
+          counted[r.oid] = 1;
+          const Drawn& d = drawn[r.oid];
+          if (!d.valid || d.day != r.day) continue;
+          const size_t k = (size_t)r.cls * NBAND + r.band;
+          Ncell[k] += 1.0; E[k] += (1.0 - (double)d.ra) * (double)d.rc; if (d.kind == 1) O[k] += 1.0;
+        }
+      }
+      double chi2 = 0; int df = 0;
+      for (size_t k = 0; k < O.size(); ++k) {
+        if (E[k] < 5.0 || Ncell[k] - E[k] < 5.0) continue;
+        chi2 += (O[k] - E[k]) * (O[k] - E[k]) / E[k] + (O[k] - E[k]) * (O[k] - E[k]) / (Ncell[k] - E[k]); ++df;
+      }
+      // the 99.9% point of chi-square with df degrees (Wilson-Hilferty)
+      const double z = 3.09, crit = df > 0 ? df * std::pow(1.0 - 2.0 / (9.0 * df) + z * std::sqrt(2.0 / (9.0 * df)), 3.0) : 0.0;
+      const bool ok = (df >= 6) && (chi2 < crit);
+      snprintf(buf, sizeof buf, "(chi-square %.1f on %d class-band cells against a 99.9%% point of %.1f)", chi2, df, crit);
+      ck(LIE == 19 ? !ok : ok, "O21  the canary draw is independent of the machine's band", buf);
     }
   }
 
@@ -705,7 +831,7 @@ static int cmd_selftest(const Args& a) {
     // the lie was invisible and O6 passed its own corruption.
     int exact = 0, seen = 0;
     for (int c = 0; c < R.w.NC; ++c) { if (!C.join_graph[c]) continue; ++seen;
-      if (__builtin_popcount(C.join_graph[c]) == cls_spec(c).n_systems) ++exact; }
+      if (__builtin_popcount(C.join_graph[c]) == planted(c).n_systems) ++exact; }
     const bool ok = (seen > 20) && (exact == seen);
     snprintf(buf, sizeof buf, "(%d of %d classes, exactly)", exact, seen);
     ck(LIE == 6 ? !ok : ok, "O6   the join graph is read off the application, not asked for", buf);
@@ -724,7 +850,7 @@ static int cmd_selftest(const Args& a) {
     // (The first lie moved one determinant to tacit after the outcomes had
     // already settled; it did not reach the mechanism and O7 passed it.)
     if (LIE == 7) for (Obligation& o : R.L.ob) if (o.state == OB_SETTLED) o.outcome = OK_GOOD;
-    PlantStore store(&R.w); PlantJudge judge(&R.w);
+    PlantStore store(&R.w); PlantJudge judge = make_resident_judge(&R.w);
     ReplayOut RP = replay(R.L, R.f, fd, C, lad, R.f.writ, store, judge);
     double num = 0, den = 0, sx = 0, sy = 0, sxy = 0, sxx = 0, syy = 0; int k = 0;
     for (int c = 0; c < R.w.NC; ++c) {
@@ -746,7 +872,7 @@ static int cmd_selftest(const Args& a) {
     run_human(R, 120);
     Compiled C = compile_from_tape(R.tape, R.w.NC, 17, true);
     Field fd; fd.init(R.w.NC, R.f.size(), 17); Ladder lad; lad.init(R.w.NC);
-    PlantStore store(&R.w); PlantJudge judge(&R.w);
+    PlantStore store(&R.w); PlantJudge judge = make_resident_judge(&R.w);
     ReplayOut RP = replay(R.L, R.f, fd, C, lad, R.f.writ, store, judge);
     long dfb = 0; for (int c = 0; c < R.w.NC; ++c) dfb += RP.disagree_firm_bad[c];
     long credited = 0;
@@ -766,7 +892,7 @@ static int cmd_selftest(const Args& a) {
     Run R; R.f = build_acme(260, 7, 19); R.w = make_world(19); R.w.demand_scale = 1.7f;
     run_human(R, 320);
     Compiled C = compile_from_tape(R.tape, R.w.NC, 19, true);
-    Resident res; res.init(R.w.NC, R.f.size(), R.w.demand_scale, C, R.f.writ, 19);
+    Resident res; res.init(R.w.NC, R.f.size(), C, R.f.writ, 19);
     // seed the estimator the way the resident does: train the head on arrivals
     // first, then read the seat as what the head could not explain
     float fq[FT_N];
@@ -774,7 +900,7 @@ static int cmd_selftest(const Args& a) {
       for (const Obligation& o : R.L.ob) {
         if (o.state != OB_SETTLED || o.seat < 0 || o.cls >= 32) continue;
         const ClassSpec& sq = cls_spec(o.cls);
-        Field::feats(sq, o.completeness, 0.5f, (float)((int)o.day_decided - (int)o.day_due) / 7.f,
+        Field::feats(sq, C.decide_frac[o.cls], o.completeness, 0.5f, (float)((int)o.day_decided - (int)o.day_due) / 7.f,
                      0.f, (float)o.hops, fq);
         const int g = (o.outcome != OK_BAD) ? 1 : 0;   // CORRECTNESS, not timeliness
         if (pass == 0) res.fd.learn(o.cls, fq, g, 0.03f);
@@ -811,13 +937,16 @@ static int cmd_selftest(const Args& a) {
   // --- O10: kappa can fail while everything else improves. A class that saves
   //          work but generates more review is demoted the same day.
   {
-    Ladder lad; lad.init(4); Writ wr; wr.kappa_max = 1.0f; Tape t;
-    Lic& L = lad.at(1, 2); L.rung = 3; L.sup_created = 900; L.sup_removed = 400;
-    lad.step(10, wr, t);
-    bool ok = (lad.at(1, 2).rung == 1);
-    if (LIE == 10) { Lic& M = lad.at(2, 2); M.rung = 3; M.sup_created = 1; M.sup_removed = 1000;
-                     lad.step(11, wr, t); ok = (lad.at(2, 2).rung == 1); }   // THE LIE
-    snprintf(buf, sizeof buf, "(kappa %.2f -> rung %d)", L.kappa(), lad.at(1, 2).rung);
+    // C1: the ladder moves inside the governor, on the machine's own supervision meter
+    Governor g; Writ wr; wr.kappa_max = 1.0f; Tape t;
+    g.init(4, wr, std::vector<float>(4, 1.f), 0u, 0u, std::vector<uint32_t>(4, 0u));
+    g.lad.at(1, 2).rung = 3;
+    SupervisionMeter sup; sup.init(4); sup.add_created(1, 2, 900); sup.add_removed(1, 2, 400);
+    g.step(10, sup, t);
+    bool ok = (g.lad.at(1, 2).rung == 1);
+    if (LIE == 10) { g.lad.at(2, 2).rung = 3; sup.add_created(2, 2, 1); sup.add_removed(2, 2, 1000);
+                     g.step(11, sup, t); ok = (g.lad.at(2, 2).rung == 1); }   // THE LIE
+    snprintf(buf, sizeof buf, "(kappa %.2f -> rung %d)", g.lad.at(1, 2).kappa(), g.lad.at(1, 2).rung);
     ck(LIE == 10 ? !ok : ok, "O10  kappa demotes a class that costs more than it saves", buf);
   }
 
@@ -848,12 +977,15 @@ static int cmd_selftest(const Args& a) {
   // --- O12: the cascade's naive fit must understate the floor. This oracle
   //          exists to keep the program honest about its own best argument.
   {
-    Cascade cs = fit_cascade(7, 29);
+    std::vector<CascadePoint> panel; PlantedFirm pf;
+    for (int n = 430; n <= 580; n += 25) { const Firm g = build_acme(n, 7, 29, &pf);
+      panel.push_back({ (double)(g.count_fn(FN_E) + g.count_fn(FN_WARRANT)), (double)g.size() }); }
+    Cascade cs = fit_cascade(panel);
     if (LIE == 12) cs.F_hat = 0;                                    // THE LIE
     const double E = 200;
-    const bool ok = (cs.predict(E) > cs.predict_naive(E) + 3.0) && (std::fabs(cs.alpha_hat - cs.alpha_true) < 0.10);
+    const bool ok = (cs.predict(E) > cs.predict_naive(E) + 3.0) && (std::fabs(cs.alpha_hat - pf.alpha_true) < 0.10);
     snprintf(buf, sizeof buf, "(alpha %.3f vs %.3f planted; F %.1f vs %.1f; gap at E=200 is %.0f seats)",
-             cs.alpha_hat, cs.alpha_true, cs.F_hat, cs.F_true, cs.predict(E) - cs.predict_naive(E));
+             cs.alpha_hat, pf.alpha_true, cs.F_hat, pf.F_true, cs.predict(E) - cs.predict_naive(E));
     ck(LIE == 12 ? !ok : ok, "O12  the origin-fit cascade promises an impossible company", buf);
   }
 
@@ -875,15 +1007,15 @@ static int cmd_selftest(const Args& a) {
     {
       double bx = 0, by = 0, mx = 0, my = 0, mn = 0, vn = 0; int m = 0;
       for (int c = 0; c < R.w.NC; ++c) if (C.decide_frac[c] > 0) {
-        mx += cls_spec(c).decide_frac; my += C.decide_frac[c]; mn += C.n_systems[c]; ++m; }
+        mx += planted(c).decide_frac; my += C.decide_frac[c]; mn += C.n_systems[c]; ++m; }
       mx /= m; my /= m; mn /= m;
       for (int c = 0; c < R.w.NC; ++c) if (C.decide_frac[c] > 0) {
         const double dn = C.n_systems[c] - mn;
-        bx += dn * (cls_spec(c).decide_frac - mx); by += dn * (C.decide_frac[c] - my); vn += dn * dn; }
+        bx += dn * (planted(c).decide_frac - mx); by += dn * (C.decide_frac[c] - my); vn += dn * dn; }
       bx /= std::max(1e-9, vn); by /= std::max(1e-9, vn);
       for (int c = 0; c < R.w.NC; ++c) if (C.decide_frac[c] > 0) {
         const double dn = C.n_systems[c] - mn;
-        pr.push_back({ cls_spec(c).decide_frac - bx * dn, C.decide_frac[c] - by * dn }); }
+        pr.push_back({ planted(c).decide_frac - bx * dn, C.decide_frac[c] - by * dn }); }
     }
     const int k = (int)pr.size();
     std::vector<int> ix(k), iy(k); for (int i = 0; i < k; ++i) ix[i] = iy[i] = i;

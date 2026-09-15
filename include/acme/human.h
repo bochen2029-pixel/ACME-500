@@ -105,6 +105,7 @@ inline WorkResult human_work(World& w, Ledger& L, Firm& f, Tape& tape, HumanStat
   Obligation& o = L.ob[idx];
   Seat& s = f.seat[seat_id];
   const ClassSpec& sp = cls_spec(o.cls);
+  const PlantedSpec& pl = planted(o.cls);     // the plant's arm reads the planted round trip; the machine never can
   const uint64_t seed = w.seed;
   WorkResult res;
   TimeLedger& TL = st.time; TimeLedger& CL = st.by_class[o.cls];
@@ -119,11 +120,11 @@ inline WorkResult human_work(World& w, Ledger& L, Firm& f, Tape& tape, HumanStat
   if (o.last_touch != day && (o.systems_opened || o.state == OB_INPROG)) {
     const float d = decay(day, o.last_touch);
     const float lost = (1.f - d);
-    const float m = 8.0f * lost * (float)sp.n_systems * 0.35f;
+    const float m = 8.0f * lost * (float)pl.n_systems * 0.35f;
     TL.rework.add(m); CL.rework.add(m); res.minutes += m; act(ACT_REWORK, m);
     // some of what was fetched has to be fetched again; the loss is a row too,
     // so a fold knows which systems are no longer in hand
-    for (int k = 0; k < sp.n_systems; ++k)
+    for (int k = 0; k < pl.n_systems; ++k)
       if (ucoin(seed, 3300 + k, o.id * 31 + day, lost * 0.6f) && (o.systems_opened & (1u << k))) {
         o.systems_opened &= ~(1u << k);
         tape.put(R_CONTEXT, day, o.id, o.cls, seat_id, ARM_HUMAN, k, 0, 0.f, 0.f, 0, RF_LOST);
@@ -135,7 +136,7 @@ inline WorkResult human_work(World& w, Ledger& L, Firm& f, Tape& tape, HumanStat
   // A person under time pressure opens fewer, which is exactly how completeness
   // is lost in a real firm: not by incompetence, by triage.
   const float pressure = std::min(1.f, (float)(day + 4 > o.day_due ? 1.4f : 0.6f));
-  int want = sp.n_systems;
+  int want = pl.n_systems;
   if (s.attn_left < 60.f) want = std::max(1, want - 2);             // late in the day, cut corners
   if (pressure > 1.0f)    want = std::max(1, want - 1);
   for (int k = 0; k < want; ++k) {
@@ -165,16 +166,17 @@ inline WorkResult human_work(World& w, Ledger& L, Firm& f, Tape& tape, HumanStat
   // A day that ends mid-case is a row (HOLD, reason 3: in progress), so the fold
   // can carry the case's state and its last touch without a struct.
   // (value = the completeness in hand, so the fold carries what the reader held)
+  // (band = the band in hand, so the fold carries it when a day ends between the decision and its commit)
   auto in_progress = [&]() { o.state = OB_INPROG; res.progressed = true;
-    tape.put(R_HOLD, day, o.id, o.cls, seat_id, ARM_HUMAN, 3, 0, o.margin, o.completeness, 0, 0, 0, PROV_H); return res; };
-  const float frame_m = 6.0f + 26.0f * sp.decide_frac + 3.0f * (float)o.hops;
+    tape.put(R_HOLD, day, o.id, o.cls, seat_id, ARM_HUMAN, 3, 0, o.margin, o.completeness, o.band, 0, 0, PROV_H); return res; };
+  const float frame_m = 6.0f + 26.0f * pl.decide_frac + 3.0f * (float)o.hops;
   if (s.attn_left - res.minutes < frame_m) return in_progress();
   TL.frame.add(frame_m); CL.frame.add(frame_m); res.minutes += frame_m; act(ACT_FRAME, frame_m, o.completeness);
 
   // --- DECIDE. The job. A contested claim is not a fifteen-minute affair, and
   // the fact that it spans days is exactly why context decays and why the
   // person re-reads their own notes tomorrow.
-  const float dec_m = 12.0f + 105.0f * sp.decide_frac;
+  const float dec_m = 12.0f + 105.0f * pl.decide_frac;
   if (s.attn_left - res.minutes < dec_m) return in_progress();
   TL.decide.add(dec_m); CL.decide.add(dec_m); res.minutes += dec_m; act(ACT_DECIDE, dec_m, o.completeness);
   s.fatigue = std::min(1.f, s.fatigue + 0.035f);
@@ -198,7 +200,7 @@ inline WorkResult human_work(World& w, Ledger& L, Firm& f, Tape& tape, HumanStat
   const bool over_authority = sp.value > authority;
   const bool unsure = std::fabs(o.margin) < 0.30f;   // UNSURE is small |margin|, not a negative one
   if ((over_authority || unsure) && s.boss >= 0 && o.escalations < 3) {
-    const float tm = 6.0f + 4.0f * (float)sp.n_systems;    // writing it up for someone else
+    const float tm = 6.0f + 4.0f * (float)pl.n_systems;    // writing it up for someone else
     TL.transport.add(tm); CL.transport.add(tm); res.minutes += tm; act(ACT_TRANSPORT, tm);
     o.state = OB_ESCALATED; o.seat = s.boss; ++o.escalations; ++o.hops;
     o.systems_opened = 0;                                   // THE ROUND TRIP: the boss starts cold
@@ -220,7 +222,7 @@ inline WorkResult human_work(World& w, Ledger& L, Firm& f, Tape& tape, HumanStat
   }
 
   // --- COMMIT. Write the answer back. Into another application, of course.
-  const float com_m = 6.0f + 4.0f * (float)sp.n_systems;
+  const float com_m = 6.0f + 4.0f * (float)pl.n_systems;
   if (s.attn_left - res.minutes < com_m) return in_progress();
   TL.commit.add(com_m); CL.commit.add(com_m); res.minutes += com_m; act(ACT_COMMIT, com_m);
 
@@ -313,12 +315,11 @@ inline void human_day(World& w, Ledger& L, Firm& f, Tape& tape, HumanStats& st,
   for (uint32_t i : L.open_idx) {
     const Obligation& q = L.ob[i];
     if (q.seat >= 0 && q.state != OB_SETTLED && q.state != OB_DECIDED)
-      proj[q.seat] += 20.f + 9.0f * (float)cls_spec(q.cls).n_systems;
+      proj[q.seat] += 20.f + 9.0f * (float)planted(q.cls).n_systems;
   }
   for (uint32_t i : L.open_idx) {
     Obligation& o = L.ob[i];
     if (o.state != OB_OPEN) continue;
-    const ClassSpec& sp = cls_spec(o.cls);
     const auto& P = pool[o.cls < 32 ? o.cls : 0];
     if (P.empty()) continue;
     int best = -1; float best_room = -1e9f;
@@ -327,7 +328,7 @@ inline void human_day(World& w, Ledger& L, Firm& f, Tape& tape, HumanStats& st,
       if (room > best_room) { best_room = room; best = sid; }
     }
     if (best < 0 || best_room < 5.f) continue;             // nobody has room; it stays OPEN and ages
-    proj[best] += 20.f + 9.0f * (float)sp.n_systems;
+    proj[best] += 20.f + 9.0f * (float)planted(o.cls).n_systems;
     o.seat = best; o.state = OB_QUEUED; ++o.hops;
     tape.put(R_ASSIGN, day, o.id, o.cls, best, ARM_HUMAN, 0, o.hops);
   }

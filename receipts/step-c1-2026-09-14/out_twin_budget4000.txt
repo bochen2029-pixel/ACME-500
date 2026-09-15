@@ -1,0 +1,58 @@
+
+=== THE TWIN · TWO ACMES, ONE SEED, ONE PHYSICS ======================
+  Same arrivals, same determinants, same luck on every obligation id. The only
+  difference is who decides. A real firm cannot run this comparison — its canary
+  and its control share one ledger, and the humans see what the machine did and
+  best-respond to it. A twin can, and the most useful thing it prints is not
+  which arm won. It is HOW WRONG THE CANARY ESTIMATE WOULD HAVE BEEN.
+
+                                      incumbent       resident        delta
+  obligations settled                     82479         186335       103856
+  good outcomes  %                        42.70          31.45       -11.25
+  wrong outcomes %                         8.40          11.80         3.40
+  late outcomes  %                        48.90          56.76         7.85
+  deadline breaches %                     54.17          65.51        11.34
+  mean cycle, days                        51.94          62.52        10.58
+  writ cost of outcomes, $M              236.73         873.78       637.05
+  backlog at w_unplaced, $M             1600.98         442.33     -1158.65
+  TOTAL cost, $M                        1837.71        1316.11      -521.60
+  human minutes, thousands                24518          24827          309
+  still open at the end                  123927          20071      -103856
+
+  MINUTES BY VIA — the incumbent arm: 24518 thousand human minutes, by how the cell left the building
+  thousands of minutes                  fetch    frame   decide   commit transport   rework     glue  meeting     total  share
+  a person decided (via 0)             3041.7   1558.8   2865.2   1689.3    207.3     49.5      0.0      0.0    9411.7  38.4%
+  never decided, open at the end        965.7    504.9   1030.6      0.0    577.3     15.2      0.0      0.0    3093.7  12.6%
+  no cell: glue and meetings              0.0      0.0      0.0      0.0      0.0      0.0   7944.3   4068.3   12012.6  49.0%
+  all                                  4007.4   2063.7   3895.8   1689.3    784.6     64.7   7944.3   4068.3   24518.0 100.0%
+
+  MINUTES BY VIA — the resident arm: 24827 thousand human minutes, by how the cell left the building
+  thousands of minutes                  fetch    frame   decide   commit transport   rework     glue  meeting     total  share
+  a person decided (via 0)             3140.1   1605.5   2933.4   1786.3    181.0     54.1      0.0      0.0    9700.4  39.1%
+  the resident acted (via 1)              5.3      2.7      5.0      0.0      3.1      0.1      0.0      0.0      16.2   0.1%
+  drafted, a person keyed (via 2)       665.7    354.2    698.9      0.0    394.1     10.5      0.0      0.0    2123.5   8.6%
+  a rented mind acted (via 3)           100.0     51.3     98.5      0.0     58.1      1.4      0.0      0.0     309.4   1.2%
+  a signer executed (via 4)             213.4    109.1    216.8      0.0    114.4      4.3      0.0      0.0     658.0   2.7%
+  never decided, open at the end          2.2      1.1      2.2      0.0      1.3      0.0      0.0      0.0       6.9   0.0%
+  no cell: glue and meetings              0.0      0.0      0.0      0.0      0.0      0.0   7944.3   4068.3   12012.6  48.4%
+  all                                  4126.7   2123.9   3954.9   1786.3    752.1     70.5   7944.3   4068.3   24827.0 100.0%
+
+=== THE NUMBER A REAL PROGRAMME CANNOT GET ============================
+  true effect, paired arms           -11.25 points of good-outcome rate (total cost delta $-521.6M)
+  within-firm canary estimate        +24.81  (unattended acts 9072 vs human-decided 90571 in the same firm)
+  assisted, not in the estimate     86692 drafts and warrants a person executed, 17.1% good
+  BIAS OF THE ESTIMATOR              +36.06
+
+  The canary is not measuring the same thing as the twin, and the gap is not
+  noise. Two mechanisms drive it and both grow with the canary rate: the machine
+  is routed the cases it was licensed for, which is selection; and the humans in
+  the same firm are working a queue the machine already drained, which is
+  interference. So r has an interior optimum, not just the floor n0/V that the
+  identifiability arithmetic gives. Raise r to clear n0 faster and you contaminate
+  the comparison; lower it to protect the comparison and you never clear n0.
+
+  Budget for a bias of about this size in any real programme. It is the term the
+  three single-way documents all left out, and a simulation is the only place it
+  can be measured at all.
+
+  both arms in 142.6 s.

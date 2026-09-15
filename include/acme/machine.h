@@ -1,5 +1,5 @@
 // ============================================================================
-//  acme/machine.h — the compile step, the two graders, the ladder, the resident
+//  acme/machine.h — the compile step, the two graders, the resident
 //
 //  THE COMPILE STEP READS THE APPLICATION, NEVER THE PEOPLE.
 //  The firm already paid engineers to write down, in executable form, which
@@ -39,14 +39,24 @@
 //  resident — its alternative was never executed, so it says nothing about
 //  whether the resident would have done better. It is a reason to instrument,
 //  not a reason to license, and this file refuses to count it.
+//
+//  C1. The resident holds no salt and no ladder: the strata and the rungs
+//  reach it as rows and a table (governor.h, which this file never includes).
+//  It reads the judge through the port only when a cell's frame changed or the
+//  floor sample says so, under a read budget, and carries the last proposal
+//  forward otherwise. Every planted number it used to read (the class's system
+//  count, its judgement intensity, its completeness) is now the compile step's
+//  measurement of the same thing from rows.
 // ============================================================================
 #pragma once
 #include "core.h"
 #include "firm.h"
-#include "ledger.h"  // the cells, the open set and the minute meter, as a fold of the tape
-#include "port.h"    // the only way the machine touches a world: Store::frame and Judge::read
+#include "ledger.h"   // the cells, the open set and the minute meter, as a fold of the tape
+#include "port.h"     // the only way the machine touches a world: Store::frame and Judge::read
+#include "license.h"  // the licence table the gate reads; the governor writes it
 #include "solver.h"
-// world.h is NOT included: the machine links without the plant (oracle O17)
+// world.h and governor.h are NOT included: the machine links without the plant
+// and without the salt (oracle O17)
 
 namespace acme {
 
@@ -57,13 +67,19 @@ struct Compiled {
   int NC = 0;
   std::vector<uint32_t> join_graph;    // [NC] bitmask of systems this class reads
   std::vector<int>      n_systems;     // recovered, from the query log
-  std::vector<float>    coverage;      // estimated, from agreement-band mass
-  std::vector<float>    decide_frac;   // MEASURED from the time ledger, never told
+  std::vector<float>    coverage;      // estimated, from the world's verdicts on the agreement diagonal
+  std::vector<float>    decide_frac;   // MEASURED from ACT rows, never told
+  std::vector<float>    arrivals_per_day;      // MEASURED from ARRIVE rows over TICK rows (C1)
+  std::vector<float>    minutes_per_decision;  // MEASURED: metered human minutes per person-decision, per class (C1)
+  std::vector<uint32_t> template_hash;         // [NC] the pin of what a class is read with: the join graph under the schema pin (C1)
   std::vector<int>      invariants;    // count that held with zero violations
   std::vector<int>      invariants_proposed;
   std::vector<float>    class_geom;    // [NC*8] geometry projected from the trunk's prior
   int  classes_seen = 0;
   bool trunk_geometry = true;
+  // the kernel's estimate of what a frame of this class holds of the decision:
+  // the compile step's coverage, and 1.0 until the world has graded a replay
+  float coverage_hat(int c) const { return (c < (int)coverage.size() && coverage[c] > 0.f) ? coverage[c] : 1.f; }
 };
 
 // Read the tape as the application's query log and recover the join graph. This
@@ -77,16 +93,37 @@ inline Compiled compile_from_tape(const Tape& tape, int NC, uint64_t seed, bool 
   const TimeLedger* by_class = folded.data();
   C.join_graph.assign(NC, 0u); C.n_systems.assign(NC, 0);
   C.coverage.assign(NC, 0.f); C.decide_frac.assign(NC, 0.f);
+  C.arrivals_per_day.assign(NC, 0.f); C.minutes_per_decision.assign(NC, 0.f); C.template_hash.assign(NC, 0u);
   C.invariants.assign(NC, 0); C.invariants_proposed.assign(NC, 0);
   C.class_geom.assign((size_t)NC * 8, 0.f);
   C.trunk_geometry = trunk_geometry;
 
   std::vector<uint32_t> seen(NC, 0);
-  std::vector<int> touched(NC, 0);
+  std::vector<int> touched(NC, 0), arrived(NC, 0);
+  long ticks = 0;
+  // the metered round trip: human minutes per cell (ACT rows and fetch-on-CONTEXT
+  // rows), summed per class over the cells a person DECIDED, so the backlog's
+  // minutes are not charged to the decisions that were made
+  std::vector<float> cell_min; std::vector<uint8_t> cell_dec;
   tape.fold([&](const Rec& r) {
     if (r.type == R_CONTEXT && r.cls < NC) { seen[r.cls] |= (1u << (r.a & 31)); }
-    if (r.type == R_DECIDE  && r.cls < NC) ++touched[r.cls];
+    if (r.type == R_ARRIVE  && r.cls < NC) ++arrived[r.cls];
+    if (r.type == R_TICK) ++ticks;
+    if (r.oid == 0) return;
+    if (r.oid >= cell_min.size()) { cell_min.resize((size_t)r.oid + 1024, 0.f); cell_dec.resize((size_t)r.oid + 1024, 0); }
+    if (r.type == R_ACT && r.arm == ARM_HUMAN) cell_min[r.oid] += r.value;
+    if (r.type == R_CONTEXT && r.arm == ARM_HUMAN && r.seat >= 0 && !(r.flags & RF_LOST)) cell_min[r.oid] += r.value;
+    if (r.type == R_DECIDE && r.cls < NC) { ++touched[r.cls]; cell_dec[r.oid] = 1; }
   });
+  std::vector<double> decided_min(NC, 0.0);
+  {
+    // a second pass keyed by the cell's class: the DECIDE row names it
+    std::vector<uint16_t> cell_cls(cell_min.size(), 0xFFFF);
+    tape.fold([&](const Rec& r) { if (r.type == R_DECIDE && r.oid < cell_cls.size()) cell_cls[r.oid] = r.cls; });
+    for (size_t oid = 0; oid < cell_min.size(); ++oid)
+      if (cell_dec[oid] && cell_cls[oid] < NC) decided_min[cell_cls[oid]] += cell_min[oid];
+  }
+  const uint32_t pin = schema_hash();
   for (int c = 0; c < NC; ++c) {
     C.join_graph[c] = seen[c];
     C.n_systems[c] = __builtin_popcount(seen[c]);
@@ -97,7 +134,16 @@ inline Compiled compile_from_tape(const Tape& tape, int NC, uint64_t seed, bool 
       const TimeLedger& L = by_class[c];
       const double t = L.total();
       C.decide_frac[c] = (t > 0) ? (float)(L.decide.sum() / t) : 0.f;
+      // and what a person's round trip on this class costs, metered over the
+      // cells a person decided: the denominator kappa needs, read off rows
+      // instead of the plant's formula
+      C.minutes_per_decision[c] = (touched[c] > 0) ? (float)(decided_min[c] / (double)touched[c]) : 0.f;
     }
+    C.arrivals_per_day[c] = (ticks > 0) ? (float)arrived[c] / (float)ticks : 0.f;
+    // the template pin: what this class is read with, under the schema pin
+    { Blake2b b; b.update(&pin, 4); b.update(&c, 4); b.update(&C.join_graph[c], 4);
+      uint8_t h[32]; b.final(h);
+      C.template_hash[c] = (uint32_t)h[0] | ((uint32_t)h[1] << 8) | ((uint32_t)h[2] << 16) | ((uint32_t)h[3] << 24); }
     // Class geometry from the frontier's prior over the class NAME. What is
     // inherited is the similarity structure of English descriptions of the event
     // types, not of the firm's dynamics. That is a reasonable prior over which
@@ -146,126 +192,53 @@ inline std::vector<Invariant> mine_invariants(const Tape& tape, const Ledger& L,
 }
 
 // ----------------------------------------------------------------------------
-// §2 · THE LADDER — per class-band, on arrivals only
-// ----------------------------------------------------------------------------
-// NBAND and band_of() live in firm.h beside the writ, so both arms band alike.
-
-struct Lic {
-  int   rung = 0;
-  int   expiry_day = 0;
-  // the e-process: an anytime-valid sequential test. The operator may peek
-  // forever without invalidating it, which is how supervision actually happens.
-  double logE = 0.0;
-  double logE_demote = 0.0;
-  long   n_machine = 0, n_incumbent = 0;        // n_machine: the WAGER — unattended acts only (via 1 and 3)
-  long   good_machine = 0, good_incumbent = 0;
-  long   n_assisted = 0, good_assisted = 0;     // drafts a person keyed and warrants a signer executed (via 2 and 4):
-                                                // graded, printed, never fed to the e-process
-  // kappa
-  double sup_created = 0, sup_removed = 0;
-  long   n_agree = 0, n_disagree = 0, n_replayed = 0;
-  long   agree_good = 0, agree_total = 0;
-  bool   history_licensed = false;
-  bool   unlicensable = false;      // n0 unreachable inside a term at any tolerable rate
-  int    n0 = 0;
-  double kappa() const { return sup_removed > 1e-9 ? sup_created / sup_removed : 9.99; }
-};
-
-struct Ladder {
-  int NC = 0;
-  std::vector<Lic> lic;             // [NC * NBAND]
-  double alpha_promote = 1.0 / 20.0;
-  double alpha_demote  = 1.0 / 5.5;   // demotion an order easier than promotion; trust rebuilds asymmetrically
-  int    term_days = 30;
-
-  void init(int nc) {
-    NC = nc; lic.assign((size_t)nc * NBAND, Lic{});
-    for (int c = 0; c < nc; ++c) for (int b = 0; b < NBAND; ++b) lic[(size_t)c * NBAND + b].n0 = n0_for(c);
-  }
-  Lic& at(int c, int b) { return lic[(size_t)c * NBAND + (b < 0 ? 0 : (b >= NBAND ? NBAND - 1 : b))]; }
-  const Lic& at(int c, int b) const { return lic[(size_t)c * NBAND + (b < 0 ? 0 : (b >= NBAND ? NBAND - 1 : b))]; }
-
-  // An arrived outcome. THE ONLY THING THAT WIDENS A LICENCE is an outcome of
-  // an unattended act (via 1 or 3). A forecast, a replay, a green battery: those
-  // admit. A draft or a warrant is graded as assisted and feeds nothing.
-  void observe(int c, int b, int via, bool good, double p_incumbent) {
-    Lic& L = at(c, b);
-    if (via == 1 || via == 3) {
-      ++L.n_machine; L.good_machine += good ? 1 : 0;
-      const double p0 = std::min(0.98, std::max(0.02, p_incumbent));
-      const double p1 = std::min(0.98, p0 + 0.05);           // the wager: at least non-inferior
-      L.logE      += good ? std::log(p1 / p0) : std::log((1 - p1) / (1 - p0));
-      // the mirrored process, for demotion
-      const double q1 = std::max(0.02, p0 - 0.08);
-      L.logE_demote += good ? std::log(q1 / p0) : std::log((1 - q1) / (1 - p0));
-    } else if (via == 2 || via == 4) {
-      ++L.n_assisted; L.good_assisted += good ? 1 : 0;
-    } else {
-      ++L.n_incumbent; L.good_incumbent += good ? 1 : 0;
-    }
-  }
-  double p_incumbent(int c, int b) const {
-    const Lic& L = at(c, b);
-    return (L.n_incumbent >= 12) ? (double)L.good_incumbent / (double)L.n_incumbent : 0.72;
-  }
-
-  // Climb. Widening needs the world; narrowing needs nothing but evidence.
-  void step(uint32_t day, const Writ& wr, Tape& tape) {
-    for (int c = 0; c < NC; ++c) for (int b = 0; b < NBAND; ++b) {
-      Lic& L = at(c, b);
-      const int before = L.rung;
-      // --- narrow first, always, and with no signature
-      if (L.logE_demote > std::log(1.0 / alpha_demote) && L.rung > 0) { L.rung -= 1; L.logE_demote = 0; L.logE = 0; }
-      if (L.kappa() > wr.kappa_max && L.rung > 1 && L.sup_removed > 60.0) { L.rung = 1; L.logE = 0; }
-      if (L.expiry_day > 0 && (int)day > L.expiry_day && L.rung > 1) { L.rung -= 1; L.logE = 0; }
-      // --- widen only inside the rule, and only on arrivals past the floor
-      const bool enough = L.n_machine >= L.n0 || (L.history_licensed && b == 2 && L.n_machine >= std::max(20, L.n0 / 8));
-      if (enough && L.logE > std::log(1.0 / alpha_promote) && L.rung < 5) {
-        L.rung += 1; L.logE = 0; L.expiry_day = (int)day + 3 * term_days;
-      }
-      if (L.rung != before) tape.put(R_LICENSE, day, 0, c, -3, ARM_GOVERNOR, L.rung, b, (float)L.logE, (float)L.kappa(), b);
-      // v2: kappa is a row once a term, per class-band that has removed anything
-      if (day > 0 && (int)(day % (uint32_t)term_days) == 0 && L.sup_removed > 0.0)
-        tape.put(R_KAPPA, day, 0, c, -3, ARM_GOVERNOR, (int)L.sup_created, (int)L.sup_removed, 0.f, (float)L.kappa(), b);
-    }
-  }
-};
-
-// ----------------------------------------------------------------------------
-// §3 · REPLAY — the fast grader, on its own support
+// §2 · REPLAY — the fast grader, on its own support
 // ----------------------------------------------------------------------------
 struct ReplayOut {
   std::vector<long>  n, agree, agree_good, agree_bad, disagree, disagree_firm_good, disagree_firm_bad;
   std::vector<long>  agree_wrong;             // agreed, and the world said WRONG (not merely late)
   std::vector<long>  conf_n, conf_agree;      // both readers far from the fence (kept for the record; not the estimator)
+  std::vector<long>  firm_one, mach_one;      // the marginals, so agreement can be judged against chance (C1)
   std::vector<float> coverage, band_mass;
   long invariant_violations = 0;
   void init(int nc) { n.assign(nc,0); agree.assign(nc,0); agree_good.assign(nc,0); agree_bad.assign(nc,0); agree_wrong.assign(nc,0);
                       disagree.assign(nc,0); disagree_firm_good.assign(nc,0); disagree_firm_bad.assign(nc,0);
-                      conf_n.assign(nc,0); conf_agree.assign(nc,0);
+                      conf_n.assign(nc,0); conf_agree.assign(nc,0); firm_one.assign(nc,0); mach_one.assign(nc,0);
                       coverage.assign(nc,0.f); band_mass.assign(nc,0.f); }
+  // Cohen's kappa of the judge against the firm on this class: agreement beyond
+  // what the two marginals would produce by chance. A constant judge or a coin
+  // reads zero here however often it happens to agree.
+  double kappa_agree(int c) const {
+    if (n[c] <= 0) return 0.0;
+    const double N = (double)n[c], po = (double)agree[c] / N;
+    const double q = (double)firm_one[c] / N, qm = (double)mach_one[c] / N;
+    const double pe = q * qm + (1.0 - q) * (1.0 - qm);
+    return (pe >= 1.0 - 1e-9) ? 0.0 : (po - pe) / (1.0 - pe);
+  }
 };
 
 // Re-decide every settled obligation the firm already handled, through the gate,
 // at rung 1, and grade on the four-cell table. Only the diagonal is complete.
 inline ReplayOut replay(const Ledger& L, const Firm& f, Field& fd, const Compiled& C,
                         Ladder& lad, const Writ& wr, const Store& store, Judge& judge) {
-  (void)f;
+  (void)f; (void)fd;
   ReplayOut R; R.init(L.NC);
-  float ft[FT_N];
   for (const Obligation& o : L.ob) {
     if (o.state != OB_SETTLED || o.by_machine) continue;
     const int c = o.cls;
     ++R.n[c];
     // The resident reads the record: every instrumented system, every time, at
     // no cost, with no decay — and NOTHING tacit, because the phone call the
-    // coordinator made was never written down anywhere it can reach.
-    const Proposal mr = judge.read(store.frame(o.id, c, C.join_graph[c]), fd.mach_skill_of(c), 0x22ULL);
-    const float mach_complete = mr.completeness_hat;
-    const float z = 4.0f * mr.signal * (0.35f + 0.65f * mach_complete);
+    // coordinator made was never written down anywhere it can reach. What it
+    // believes the frame holds is the compile step's coverage, never the plant's.
+    Frame fr = store.frame(o.id, c, C.join_graph[c]);
+    fr.coverage_hat = C.coverage_hat(c);
+    const Proposal mr = judge.read(fr);
+    const float z = 4.0f * mr.signal * (0.35f + 0.65f * mr.completeness_hat);
     const int mach_decision = mr.choice;
     const int firm_decision = o.decision;
-    (void)ft;
+    if (firm_decision == 1) ++R.firm_one[c];
+    if (mach_decision == 1) ++R.mach_one[c];
     const bool confident = (std::fabs(z) > 1.1f) && (std::fabs(o.margin) > 1.1f);
     if (confident) { ++R.conf_n[c]; if (mach_decision == firm_decision) ++R.conf_agree[c]; }
     const bool good = (o.outcome == OK_GOOD);
@@ -276,8 +249,8 @@ inline ReplayOut replay(const Ledger& L, const Firm& f, Field& fd, const Compile
       // THE AGREEMENT BAND IS GRADED BY THE ARRIVAL. The action was identical,
       // so the outcome on the tape is the outcome of the resident's choice too.
       const int b = band_of(z, wr);
-      Lic& L = lad.at(c, b);
-      ++L.n_replayed; ++L.n_agree; ++L.agree_total; L.agree_good += good ? 1 : 0;
+      Lic& Lc = lad.at(c, b);
+      ++Lc.n_replayed; ++Lc.n_agree; ++Lc.agree_total; Lc.agree_good += good ? 1 : 0;
     } else {
       ++R.disagree[c];
       if (good) ++R.disagree_firm_good[c]; else ++R.disagree_firm_bad[c];
@@ -309,28 +282,22 @@ inline ReplayOut replay(const Ledger& L, const Firm& f, Field& fd, const Compile
   return R;
 }
 
-// Licence the agreement bands from history: the band is admitted to unattended
-// action where the resident's coinciding choice beat the firm's own baseline on
-// arrived outcomes, with both sides above the sample floor.
-inline int license_from_history(Ladder& lad, const ReplayOut& R, uint32_t day, Tape& tape) {
-  int promoted = 0;
-  for (int c = 0; c < lad.NC; ++c) for (int b = 0; b < NBAND; ++b) {
-    Lic& L = lad.at(c, b);
-    if (L.agree_total < 40) continue;
-    const double p_agree = (double)L.agree_good / (double)L.agree_total;
-    const double firm_base = (R.n[c] > 0) ? (double)(R.agree_good[c] + R.disagree_firm_good[c]) / (double)R.n[c] : 0.0;
-    if (p_agree >= firm_base - 0.01 && b >= 1) {
-      L.history_licensed = true;
-      if (L.rung < 1) { L.rung = 1; ++promoted;
-        tape.put(R_LICENSE, day, 0, c, -3, ARM_GOVERNOR, L.rung, b, (float)p_agree, (float)firm_base, b, RF_HISTORY); }
-    }
-  }
-  return promoted;
-}
+// ----------------------------------------------------------------------------
+// §3 · THE RESIDENT — one process, one state, one period
+// ----------------------------------------------------------------------------
+// The machine's own account of the supervision it caused and removed, per
+// class-band, in minutes. The governor reads it for kappa; the machine never
+// writes a rung.
+struct SupervisionMeter {
+  int NC = 0;
+  std::vector<double> cre, rem;
+  void init(int nc) { NC = nc; cre.assign((size_t)nc * NBAND, 0.0); rem.assign((size_t)nc * NBAND, 0.0); }
+  void add_created(int c, int b, double m) { cre[(size_t)c * NBAND + b] += m; }
+  void add_removed(int c, int b, double m) { rem[(size_t)c * NBAND + b] += m; }
+  double created(int c, int b) const { return cre[(size_t)c * NBAND + b]; }
+  double removed(int c, int b) const { return rem[(size_t)c * NBAND + b]; }
+};
 
-// ----------------------------------------------------------------------------
-// §4 · THE RESIDENT — one process, one state, one period
-// ----------------------------------------------------------------------------
 struct MachineStats {
   uint64_t acted = 0, drafted = 0, frontier = 0, warrant = 0, held = 0, undone = 0;
   uint64_t canary = 0, audit = 0;
@@ -340,68 +307,50 @@ struct MachineStats {
   double frontier_calls = 0;
   std::vector<uint64_t> acted_by_class;
   std::vector<uint64_t> reason_count;
+  // C1: the read budget's own account
+  uint64_t reads = 0;             // Judge::read calls on the resident judge
+  uint64_t reads_fresh = 0;       //   of which: a cell with no valid proposal (new, or its frame changed)
+  uint64_t reads_floor = 0;       //   of which: the floor sample re-reading an unchanged frame
+  uint64_t memo_hits = 0;         // cells that carried their last proposal forward
+  uint64_t unread = 0;            // cells the budget never reached: a hold with reason unread
+  int      budget_bound = 0;      // periods in which the budget was exhausted with candidates left
+  double   forgone_dual = 0;      // sum over periods of |u_i| over the cells left unread
+  double   total_dual = 0;        // sum over periods of |u_i| over every open cell
+  int      periods = 0;
   void init(int nc) { acted_by_class.assign(nc, 0); reason_count.assign(RS_N, 0); }
   double kappa() const { return sup_removed_min > 1e-9 ? sup_created_min / sup_removed_min : 9.99; }
 };
 
 struct Resident {
   Field   fd;
-  Ladder  lad;
   Compiled C;
   Transport tr;
   Integrator hand;
   MachineStats st;
+  SupervisionMeter sup;
   Writ    wr;
   double  adjudication_budget_min = 0;   // the humans still here, and their hours
   int     NC = 0, NS = 0;
   float   lr = 0.02f;
+  std::vector<uint32_t> memo_hash;       // [oid] the frame hash the cell's last proposal was read under
 
-  // C0: the resident is told the class count, the seat count and the arrival
-  // scale; it never holds a World. (demand_scale is a plant parameter in C0; in
-  // C1 arrivals per term fold from ARRIVE rows.)
-  void init(int nc, int ns, float demand_scale, const Compiled& comp, const Writ& writ, uint64_t seed) {
+  // C1: the resident is told the class count and the seat count, holds the
+  // compile step's output and the writ (which no longer carries the salt), and
+  // never a World, a ladder or a salt.
+  void init(int nc, int ns, const Compiled& comp, const Writ& writ, uint64_t seed) {
     NC = nc; NS = ns; C = comp; wr = writ;
-    fd.init(NC, NS, seed); lad.init(NC); st.init(NC);
-    // n0 per class-band, and mark the ones the world will never answer fast
-    // enough to license. The honest account prints them as human rather than
-    // holding them in shadow forever.
-    for (int c = 0; c < NC; ++c) {
-      const ClassSpec& sp = cls_spec(c);
-      const double per_term = sp.arrival_per_day * demand_scale * lad.term_days;
-      for (int b = 0; b < NBAND; ++b) {
-        Lic& L = lad.at(c, b);
-        L.n0 = n0_for(c, wr.canary_delta);
-        if (per_term * 0.25 < L.n0 / 4.0) L.unlicensable = true;   // even a 25% canary cannot clear it
-      }
-    }
+    fd.init(NC, NS, seed); st.init(NC); sup.init(NC);
   }
 
-  // The canary draw. Keyed hash, salted from the IMMUTABLE FLOOR, so the
-  // resident cannot predict which instances are grading it. A lineage that can
-  // pick its own arena picks an easy one.
-  bool in_canary(uint32_t oid, int c, float rate) const {
-    return u01(wr.salt, 7000 + c, oid) < rate;
-  }
-  float canary_rate(int c, int b) const {
-    const Lic& L = lad.at(c, b);
-    // The writ's eps_floor is the uniform component: a floor the kernel may
-    // raise and never lower. The first run hard-coded 0.02 here and read
-    // eps_floor nowhere, so the multiverse's "explore more" patch reproduced
-    // the baseline to the digit.
-    if (L.rung >= 4) return std::max(wr.eps_floor, 1.0f / std::sqrt(3.0f * std::max(1.f, (float)L.n_machine)));  // eps* = sqrt(3/F)
-    const double per_term = std::max(1.0, (double)cls_spec(c).arrival_per_day * lad.term_days);
-    return (float)std::min(0.35, std::max((double)wr.eps_floor, L.n0 / per_term));
-  }
-
-  void period(Ledger& L, Firm& f, Tape& tape, uint32_t day, const Store& store, Judge& judge);
-  void grade(Ledger& L, const Firm& f, Tape& tape, uint32_t day);
-  // The judge behind the port, named by hash on every proposal row. Today the
-  // only judge is the plant's read arithmetic (step C installs the port).
-  static uint32_t judge_hash() { return 0x504C4A31u; }   // 'PLJ1': PlantJudge, v1 arithmetic
+  void period(Ledger& L, Firm& f, Tape& tape, uint32_t day, const Store& store, Judge& judge, Judge& frontier, const Ladder& lic);
+  void grade(Ledger& L, uint32_t day, Judge& judge, Judge& frontier);
 };
 
-// One period of the resident. The whole thing is a solve, a gate and a hand.
-inline void Resident::period(Ledger& L, Firm& f, Tape& tape, uint32_t day, const Store& store, Judge& judge) {
+// One period of the resident. The whole thing is a solve, a read budget, a gate
+// and a hand.
+inline void Resident::period(Ledger& L, Firm& f, Tape& tape, uint32_t day, const Store& store,
+                             Judge& judge, Judge& frontier, const Ladder& lic) {
+  ++st.periods;
   // --- the adjudication budget: the humans who are still here. This is the
   // ceiling on the whole enterprise and it is deliberately small.
   adjudication_budget_min = 0;
@@ -427,13 +376,16 @@ inline void Resident::period(Ledger& L, Firm& f, Tape& tape, uint32_t day, const
   for (int j = 0; j < NSEAT; ++j) tr.cap[j] = std::max(0.5f, f.seat[seats[j]].attn_left / 90.f);
   for (int i = 0; i < N; ++i) tr.supply[i] = 1.f;
 
-  // --- the cost of putting row i in column j. ONE PLACE.
+  // --- the cost of putting row i in column j. ONE PLACE. What the machine
+  // believes a frame of class c holds is the compile step's coverage (C1),
+  // never the plant's completeness; the field prices every cell on it before
+  // any judge is read, so the transport needs no read.
   std::vector<float> mach_complete(N), lateness(N);
   std::vector<int>   rcls(N);
   for (int i = 0; i < N; ++i) {
     const Obligation& o = L.ob[rows[i]];
     rcls[i] = o.cls;
-    mach_complete[i] = store.frame(o.id, o.cls, C.join_graph[o.cls]).coverage_hat;   // C0: the plant's completeness, through the port
+    mach_complete[i] = C.coverage_hat(o.cls);
     lateness[i] = (float)((int)day - (int)o.day_due) / 7.f;
   }
   float ftmp[FT_N];
@@ -447,12 +399,60 @@ inline void Resident::period(Ledger& L, Firm& f, Tape& tape, uint32_t day, const
     const int sid = seats[j];
     if (c < 32 && !((f.seat[sid].spec >> c) & 1u)) return 1e30f;   // law: -inf BEFORE normalisation
     const float sk = fd.skill_of(sid, c);
-    Field::feats(sp, mach_complete[i], sk, lateness[i], 1.f - tr.cap[j] / 8.f, (float)L.ob[rows[i]].hops, ftmp);
+    Field::feats(sp, C.decide_frac[c], mach_complete[i], sk, lateness[i], 1.f - tr.cap[j] / 8.f, (float)L.ob[rows[i]].hops, ftmp);
     const float pg = Field::sigm(fd.logit(c, ftmp));
     return (1.f - pg) * 1.0f + 0.10f * std::max(0.f, lateness[i]);
   };
 
   tr.run(cost, 12);
+
+  // --- THE READ BUDGET (C1). Behind the port a read is a forward pass. A cell
+  // whose frame hash is unchanged since its last proposal carries that proposal
+  // forward from the ledger's memo (a fold of PROPOSAL rows); a cell with no
+  // valid proposal, or one drawn by the floor sample, is a candidate for a read.
+  // Candidates are read ripest first up to the writ's budget; a cell the budget
+  // never reached holds with reason UNREAD. The floor sample is the kernel's
+  // own hygiene (it checks the judge's consistency, not the arena) and is drawn
+  // on the kernel's key, never the governor's salt.
+  std::vector<Frame> frames(N);
+  std::vector<uint8_t> has_prop(N, 0), needs_read(N, 0);
+  std::vector<int> cand;
+  for (int i = 0; i < N; ++i) {
+    const Obligation& o = L.ob[rows[i]]; const int c = o.cls;
+    Frame fr = store.frame(o.id, c, C.join_graph[c]);
+    fr.frame_hash ^= C.template_hash[c];                       // the memo key: the record and the template, never the clock
+    fr.coverage_hat = mach_complete[i];
+    frames[i] = fr;
+    if (o.id >= memo_hash.size()) memo_hash.resize((size_t)o.id + 1024, 0u);
+    const Ledger::LastProp* m = L.memo(o.id);
+    const bool valid = m && m->judge_hash == judge.hash() && memo_hash[o.id] == fr.frame_hash;
+    const bool floor = valid && (u01(0x524541444BULL /*'READK'*/, 7400 + c, o.id * 131u + day) < wr.eps_floor);
+    if (valid) has_prop[i] = 1;
+    if (!valid || floor) { needs_read[i] = 1; cand.push_back(i); }
+  }
+  std::sort(cand.begin(), cand.end(), [&](int x, int y) {
+    if (lateness[x] != lateness[y]) return lateness[x] > lateness[y];          // ripest first
+    return L.ob[rows[x]].id < L.ob[rows[y]].id; });
+  int reads_now = 0;
+  for (int i : cand) {
+    if (reads_now >= wr.read_budget) break;
+    const Obligation& o = L.ob[rows[i]]; const int c = o.cls;
+    const Proposal mr = judge.read(frames[i]);
+    const float direction = 4.0f * mr.signal * (0.35f + 0.65f * mr.completeness_hat);
+    const int   b = band_of(direction, wr);
+    // v2: the proposal is a row BEFORE the verdict, whatever the gate then says.
+    // It feeds nothing; it is what the machine thought, on the record. C1: it is
+    // written on a read only, and folded into the ledger's memo as it is written.
+    // a floor re-read is a read of a cell that already carried a valid proposal
+    if (has_prop[i]) ++st.reads_floor; else ++st.reads_fresh;
+    put_fold(tape, L, R_PROPOSAL, day, o.id, c, -1, ARM_MACHINE, mr.choice, (int)mr.judge_hash, direction, mr.completeness_hat, b, 0, 0, PROV_M);
+    memo_hash[o.id] = frames[i].frame_hash;
+    has_prop[i] = 1; ++reads_now; ++st.reads;
+  }
+  for (int i = 0; i < N; ++i) if (has_prop[i] && !needs_read[i]) ++st.memo_hits;
+  if (reads_now >= wr.read_budget && (int)cand.size() > reads_now) ++st.budget_bound;
+  // the forgone dual: what the budget left unread, priced by the field's own duals
+  for (int i = 0; i < N; ++i) { st.total_dual += std::fabs(tr.u[i]); if (!has_prop[i]) st.forgone_dual += std::fabs(tr.u[i]); }
 
   // --- decide each row: the resident's own choice, its direction, its band
   int adj_used = 0;
@@ -461,12 +461,17 @@ inline void Resident::period(Ledger& L, Firm& f, Tape& tape, uint32_t day, const
     Obligation& o = L.ob[idx];
     const int c = o.cls; const ClassSpec& sp = cls_spec(c);
 
-    const Proposal mr = judge.read(store.frame(o.id, c, C.join_graph[c]), fd.mach_skill_of(c), 0x22ULL);
-    mach_complete[i] = mr.completeness_hat;
+    if (!has_prop[i]) {                                          // the budget never reached it
+      ++st.held; ++st.unread; ++st.reason_count[RS_UNREAD];
+      tape.put(R_HOLD, day, o.id, c, -1, ARM_MACHINE, RS_UNREAD, 0, 0.f, sp.value, 0, 0, 0, PROV_M);
+      continue;
+    }
+    const Ledger::LastProp& m = *L.memo(o.id);
     // DIRECTION is signed, and it is the only margin the gate reads. Entropy
     // would say how unsure the field is and never which way it leans.
-    const float direction = 4.0f * mr.signal * (0.35f + 0.65f * mr.completeness_hat);
+    const float direction = m.direction;
     const int   b = band_of(direction, wr);
+    mach_complete[i] = m.completeness_hat;
     const float supp = tr.support(cost, i);
     const float sharp = std::max(0.f, (supp - 1.6f));
     // NOVELTY IS ABOUT THE CASE, NOT THE QUEUE. The first run added lateness to
@@ -477,16 +482,15 @@ inline void Resident::period(Ledger& L, Firm& f, Tape& tape, uint32_t day, const
     const float nov = fd.novelty(c, std::fabs(mach_complete[i] - 0.7f));
     const bool blocked = (o.dep >= 0 && L.ob[o.dep].state != OB_SETTLED && L.ob[o.dep].state != OB_DECIDED);
 
-    GateIn g{}; g.cls = c; g.rung = lad.at(c, b).rung; g.band = b;
+    // the strata reach the gate as rows the governor wrote before this period;
+    // the rung reaches it as the table the governor keeps, keyed to this judge
+    const int stratum = L.stratum_of(o.id, day);
+    GateIn g{}; g.cls = c; g.rung = lic.rung_for(c, b, judge.hash()); g.band = b;
     g.direction = direction; g.sharpness = sharp; g.novelty = nov;
     g.reversible = sp.reversible; g.warrant_reserved = sp.warrant; g.blocked = blocked;
-    g.in_canary = in_canary(o.id, c, canary_rate(c, b));
-    g.in_audit  = (u01(wr.salt, 7100 + c, o.id) < std::max(0.01f, 1.0f / std::sqrt(3.0f * std::max(1.f, (float)lad.at(c,b).n_machine))));
+    g.in_canary = (stratum == 1);
+    g.in_audit  = (stratum == 2);
     g.budget_left = (float)(adjudication_budget_min - adj_used * 45.0);
-
-    // v2: the proposal is a row BEFORE the verdict, whatever the gate then says.
-    // It feeds nothing; it is what the machine thought, on the record.
-    tape.put(R_PROPOSAL, day, o.id, c, -1, ARM_MACHINE, mr.choice, (int)judge_hash(), direction, mach_complete[i], b, 0, 0, PROV_M);
 
     const GateOut v = gate(g, wr);
     ++st.reason_count[v.reason];
@@ -494,18 +498,17 @@ inline void Resident::period(Ledger& L, Firm& f, Tape& tape, uint32_t day, const
     fd.calib_push(c, std::fabs(mach_complete[i] - 0.7f));
 
     // the human minutes this obligation WOULD have cost, which is the
-    // denominator of kappa and must be computed the same way for both arms
-    const double would_cost = 6.0 * sp.n_systems + 6.0 + 26.0 * sp.decide_frac
-                            + 12.0 + 105.0 * sp.decide_frac + 6.0 + 4.0 * sp.n_systems;
+    // denominator of kappa: metered from the firm's own rows for this class
+    // (C1), never a formula over planted constants
+    const double would_cost = C.minutes_per_decision[c];
 
     switch (v.verdict) {
       case V_ACT: {
         o.completeness = mach_complete[i];
-        hand.commit(L, tape, idx, mr.choice, day, direction, b, 1);   // via 1: the wager
+        hand.commit(L, tape, idx, m.choice, day, direction, b, 1);   // via 1: the wager
         ++st.acted; ++st.acted_by_class[c];
         st.completeness.add(o.completeness);
-        st.sup_removed_min += would_cost;
-        lad.at(c, b).sup_removed += would_cost;
+        st.sup_removed_min += would_cost; sup.add_removed(c, b, would_cost);
         if (v.reason == RS_CANARY) ++st.canary;
         break;
       }
@@ -513,20 +516,19 @@ inline void Resident::period(Ledger& L, Firm& f, Tape& tape, uint32_t day, const
         // rent a bigger mind for this one cell. It costs money and, because a
         // human still reads the answer at low rungs, a little supervision.
         ++st.frontier; st.frontier_calls += 1.0;
-        // the rented mind reads the same record, with less noise. It cannot
+        // the rented mind reads the same frame, with less noise. It cannot
         // buy coverage: a fact nobody recorded is not available at any price.
-        const Proposal fr = judge.read(store.frame(o.id, c, C.join_graph[c]), 0.96f, 0x33ULL);
+        const Proposal fr = frontier.read(frames[i]);
         const float boost = 0.72f;
-        if (judge.act_coin(c, o.id, boost)) {                  // F16: the coin is the judge's, never the kernel's
+        if (frontier.act_coin(c, o.id, boost)) {               // F16: the coin is the judge's, on its own key
           o.completeness = fr.completeness_hat;
           hand.commit(L, tape, idx, fr.choice, day,
                       direction + (direction > 0 ? 0.9f : -0.9f), b, 3);     // via 3: a rented mind acted
           ++st.acted; ++st.acted_by_class[c];
-          st.sup_removed_min += would_cost;
-          lad.at(c, b).sup_removed += would_cost;
+          st.sup_removed_min += would_cost; sup.add_removed(c, b, would_cost);
         } else {
           o.state = OB_ESCALATED; ++st.warrant; ++adj_used;
-          st.sup_created_min += 22.0; lad.at(c, b).sup_created += 22.0;
+          st.sup_created_min += 22.0; sup.add_created(c, b, 22.0);
           // v2: a = the seat that keeps it (the resident escalates without moving it), so a fold does not reseat the cell
           tape.put(R_ESCALATE, day, o.id, c, -1, ARM_MACHINE, o.seat, o.escalations, direction, sp.value, b, 0, 0, PROV_M);
         }
@@ -536,25 +538,25 @@ inline void Resident::period(Ledger& L, Firm& f, Tape& tape, uint32_t day, const
         // the resident prepares; a person presses the key. This is real
         // supervision created, and it is why a draft is not free.
         ++st.drafted; ++adj_used;
-        const double review = 4.0 + 9.0 * sp.decide_frac;
-        st.sup_created_min += review; lad.at(c, b).sup_created += review;
+        const double review = 4.0 + 9.0 * C.decide_frac[c];
+        st.sup_created_min += review; sup.add_created(c, b, review);
         st.sup_removed_min += would_cost - review;
-        lad.at(c, b).sup_removed += std::max(0.0, would_cost - review);
+        sup.add_removed(c, b, std::max(0.0, would_cost - review));
         o.completeness = mach_complete[i];
-        hand.commit(L, tape, idx, mr.choice, day, direction, b, 2);   // via 2: assisted, never the wager
+        hand.commit(L, tape, idx, m.choice, day, direction, b, 2);   // via 2: assisted, never the wager
         if (v.reason == RS_AUDIT) ++st.audit;
         break;
       }
       case V_WARRANT: {
         ++st.warrant; ++adj_used;
-        const double sign = 12.0 + 20.0 * sp.decide_frac;
-        st.sup_created_min += sign; lad.at(c, b).sup_created += sign;
+        const double sign = 12.0 + 20.0 * C.decide_frac[c];
+        st.sup_created_min += sign; sup.add_created(c, b, sign);
         st.sup_removed_min += std::max(0.0, would_cost - sign);
-        lad.at(c, b).sup_removed += std::max(0.0, would_cost - sign);
+        sup.add_removed(c, b, std::max(0.0, would_cost - sign));
         // the signer executes the machine's choice verbatim on the stratum; a
         // refusal is a veto ROW and grades nothing
         o.completeness = mach_complete[i];
-        hand.commit(L, tape, idx, mr.choice, day, direction, b, 4);   // via 4: assisted, never the wager
+        hand.commit(L, tape, idx, m.choice, day, direction, b, 4);   // via 4: assisted, never the wager
         break;
       }
       default: {
@@ -564,40 +566,16 @@ inline void Resident::period(Ledger& L, Firm& f, Tape& tape, uint32_t day, const
       }
     }
   }
-  lad.step(day, wr, tape);
 }
 
-// O15 · THE LADDER IS A FOLD. Rebuild every licence's evidence counts and both
-// e-processes from OUTCOME rows alone, in tape order, from the day the resident
-// first graded, and compare to the live ladder. The rows carry the band and the
-// via, so nothing else is joined. [v2, step B3]
-inline Ladder fold_ladder(const Tape& tape, int NC, uint32_t from_day) {
-  Ladder L; L.init(NC);
-  tape.fold([&](const Rec& r) {
-    if (r.type != R_OUTCOME || r.day < from_day || r.cls >= NC) return;
-    L.observe(r.cls, r.band, (int)r.via, r.a == OK_GOOD, L.p_incumbent(r.cls, r.band));
-  });
-  return L;
-}
-inline long ladder_diff(const Ladder& a, const Ladder& b) {
-  long bad = 0;
-  for (size_t i = 0; i < a.lic.size() && i < b.lic.size(); ++i) {
-    const Lic& x = a.lic[i]; const Lic& y = b.lic[i];
-    if (x.n_machine != y.n_machine || x.good_machine != y.good_machine) ++bad;
-    if (x.n_incumbent != y.n_incumbent || x.good_incumbent != y.good_incumbent) ++bad;
-    if (x.n_assisted != y.n_assisted || x.good_assisted != y.good_assisted) ++bad;
-  }
-  return bad + (long)(a.lic.size() != b.lic.size());
-}
-
-// Outcomes arrive. This is the only place a licence can widen.
-inline void Resident::grade(Ledger& L, const Firm& f, Tape& tape, uint32_t day) {
-  (void)f; (void)tape;
+// Outcomes arrive. The field learns from them; the judge is told about the cells
+// it decided. Nothing here widens a licence: that is the governor's fold of the
+// same OUTCOME rows.
+inline void Resident::grade(Ledger& L, uint32_t day, Judge& judge, Judge& frontier) {
   float ftmp[FT_N];
   for (Obligation& o : L.ob) {
     if (o.state != OB_SETTLED || o.day_settled != day) continue;
     const int c = o.cls; const ClassSpec& sp = cls_spec(c);
-    const bool good  = (o.outcome == OK_GOOD);
     // CORRECTNESS AND TIMELINESS ARE DIFFERENT QUANTITIES AND MUST NOT SHARE A
     // GRADER. Whether the answer was right is a property of the decider; whether
     // it was on time is a property of the queue it sat in. The head and the
@@ -606,26 +584,24 @@ inline void Resident::grade(Ledger& L, const Firm& f, Tape& tape, uint32_t day) 
     // pays for. Conflating them makes competence unrecoverable — a busy expert
     // and a idle novice look identical.
     const bool right = (o.outcome != OK_BAD);
-    const int b = o.band;
     // train on the arrival, with a Horvitz–Thompson weight for the canary
     // stratum so a field that routes attention by its own estimate does not
-    // starve its own evidence
-    const float rate = canary_rate(c, b);
-    // the weight belongs to the canary stratum only; a draft was not drawn by
-    // the salt and carries no selection probability to invert
-    const float ipw = (o.via == 1) ? std::min(6.f, 1.f / std::max(rate, 0.05f)) : 1.f;
-    Field::feats(sp, o.completeness, fd.skill_of(o.seat, c),
+    // starve its own evidence. The weight belongs to the canary stratum only; a
+    // draft was not drawn by the salt and carries no selection probability to
+    // invert. The rate is the one the governor drew this cell against, read
+    // off the stratum row it wrote (C1): the kernel never computes a rate.
+    const float ipw = (o.via == 1) ? std::min(6.f, 1.f / std::max(L.stratum_rate_of(o.id), 0.05f)) : 1.f;
+    Field::feats(sp, C.decide_frac[c], o.completeness, fd.skill_of(o.seat, c),
                  (float)((int)o.day_decided - (int)o.day_due) / 7.f, 0.f, (float)o.hops, ftmp);
     fd.learn(c, ftmp, right ? 1 : 0, lr, ipw);
     if (!o.by_machine) {
       // predict with skill held NEUTRAL, so what the update sees is the seat
       float fn_[FT_N];
-      Field::feats(sp, o.completeness, 0.5f,
+      Field::feats(sp, C.decide_frac[c], o.completeness, 0.5f,
                    (float)((int)o.day_decided - (int)o.day_due) / 7.f, 0.f, (float)o.hops, fn_);
       fd.observe_skill(o.seat, c, right ? 1 : 0, Field::sigm(fd.logit(c, fn_)));
-    }
-    else               fd.observe_mach(c, right ? 1 : 0);
-    lad.observe(c, b, (int)o.via, good, lad.p_incumbent(c, b));
+    } else if (o.via == 3) frontier.observe(c, right);
+    else                   judge.observe(c, right);
   }
 }
 

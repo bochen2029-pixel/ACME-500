@@ -38,23 +38,21 @@ namespace acme {
 struct Cascade {
   double alpha_hat = 0, F_hat = 0;        // fit WITH an intercept
   double alpha_naive = 0;                 // fit through the origin, the usual mistake
-  double alpha_true = 0, F_true = 0;
   int    n_points = 0;
   double predict(double E) const              { return E / std::max(0.05, 1.0 - alpha_hat) + F_hat; }
   double predict_naive(double E) const        { return E / std::max(0.05, 1.0 - alpha_naive); }
 };
 
-// Build the panel the way a real analyst would: the firm at the sizes it has
-// actually been. Then fit twice.
-inline Cascade fit_cascade(int span, uint64_t seed, int lo = 430, int hi = 580, int step = 25) {
+// The panel is what a real analyst has: the firm's payroll against its order
+// book at the sizes it has actually been, as (E, N) points. C1: the report is
+// handed the points and fits twice; it cannot generate a firm, because the
+// generator is the plant's and the planted alpha and F are exactly what this
+// regression must be caught missing.
+struct CascadePoint { double E, N; };
+inline Cascade fit_cascade(const std::vector<CascadePoint>& panel) {
   Cascade c;
   std::vector<double> E, N;
-  for (int n = lo; n <= hi; n += step) {
-    Firm f = build_acme(n, span, seed);
-    const double e = f.count_fn(FN_E) + f.count_fn(FN_WARRANT);
-    E.push_back(e); N.push_back(f.size());
-    c.alpha_true = f.alpha_true; c.F_true = f.F_true;
-  }
+  for (const CascadePoint& p : panel) { E.push_back(p.E); N.push_back(p.N); }
   c.n_points = (int)E.size();
   // N = a*E + b, with a = 1/(1-alpha), b = F
   double sx = 0, sy = 0, sxx = 0, sxy = 0; const double m = (double)E.size();
@@ -86,15 +84,17 @@ struct Residual {
   double total = 0;
 };
 
-inline Residual residual_of(const Ladder& lad, float demand_scale, const Compiled& C) {
+// C1: decision mass is the MEASURED arrival rate (a fold of ARRIVE rows), and
+// the counterparty column is the schema's authored flag, never a rule over a
+// planted judgement intensity.
+inline Residual residual_of(const Ladder& lad, const Compiled& C) {
   Residual r;
   for (int c = 0; c < lad.NC; ++c) {
     const ClassSpec& sp = cls_spec(c);
-    const double mass = sp.arrival_per_day * demand_scale;
+    const double mass = (c < (int)C.arrivals_per_day.size()) ? C.arrivals_per_day[c] : 0.f;
     r.total += mass;
     if (sp.warrant) { r.warrant += mass; continue; }
-    // counterparty: high-value contested classes where the other side wants a person
-    if (sp.value > 60000 && sp.decide_frac > 0.35f) { r.counterparty += mass; continue; }
+    if (sp.counterparty) { r.counterparty += mass; continue; }   // the other side demands a person
     bool any = false, thin = true;
     for (int b = 0; b < NBAND; ++b) {
       const Lic& L = lad.at(c, b);

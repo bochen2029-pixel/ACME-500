@@ -88,8 +88,18 @@ struct Writ {
   float eps_floor    = 0.03f;   // the uniform draw. A floor the kernel may raise, never lower.
   float canary_delta = 0.30f;   // the non-inferiority margin that sets n0
   int   audit_min    = 3;       // a sampled review fraction never reaches zero
-  uint64_t salt      = 0xAC3E5A17ULL;  // THE ARENA'S SALT LIVES IN THE FLOOR.
-                                       // A lineage that picks its own canary picks an easy one.
+  float canary_cap   = 0.35f;   // the most of a class the wager may take in a term
+  int   read_budget  = 50000;   // C1: Judge::read calls per period, a dial [BUDGET]: one resident
+                                // card at ~0.6 reads a second over a day-long period. Behind the port a
+                                // read is a forward pass; the field spends them ripest-first on cells
+                                // with no valid proposal, then the floor sample; a cell it never
+                                // reached holds as UNREAD. The run prints how often it bound. At
+                                // 4,000 it binds on the warm backlog for 22 periods and costs the
+                                // twin seven points of good rate (the C1 receipt); --budget sweeps it.
+  // C1: the arena's salt is NOT here. It lives in the governor (governor.h), which
+  // draws the strata and writes them as rows before the machine's period; the
+  // kernel reads the rows and never the salt. v1 kept it in the writ the
+  // resident held, which is the lineage picking its own arena.
 };
 
 // The margin bands the licence is kept in. |direction|: 0 = thin, 1 = mid,
@@ -108,8 +118,6 @@ struct Firm {
   std::vector<Seat> seat;
   int n_ic = 0, n_lead = 0, n_mgr = 0, n_dir = 0, n_vp = 0, n_c = 0;
   int span = 7;
-  float alpha_true = 0.f;       // planted: the true support coefficient
-  float F_true = 0.f;           // planted: the fixed floor a within-firm fit cannot see
   Writ writ;
 
   int size() const { return (int)seat.size(); }
@@ -119,146 +127,13 @@ struct Firm {
 };
 
 // ----------------------------------------------------------------------------
-// Build ACME: a 500-seat knowledge-work headquarters.
-//
-// The shape is derived from the span, not typed in. E-seats are allotted to the
-// six wires in proportion to arrival rate × handling cost, and then the support
-// pyramid is grown on top of the resulting headcount — which is the whole point:
-// the α-functions are sized from N, so when N falls they fall with it, whether
-// or not anyone automates what they do.
+// C1: build_acme, the generator of the 500-seat headquarters, lives in world.h.
+// It sizes the wires from the planted round-trip costs (how many systems a
+// class opens, how much of it is judgement), which the kernel must not be able
+// to name. What stays here is the Firm as data: seats, the writ, the bands and
+// the price of an outcome. The support coefficient and the fixed floor the
+// generator plants are returned beside the firm, never on it.
 // ----------------------------------------------------------------------------
-inline Firm build_acme(int target_n = 500, int span = 7, uint64_t seed = 20260913) {
-  Firm f; f.span = span;
-  int NC; const ClassSpec* S = schema(NC);
-
-  // --- how much E-work exists, per wire, in units of IC-days per day
-  double wire_load[W_N] = {0};
-  for (int c = 0; c < NC; ++c) {
-    // a class's daily human cost is arrivals × (fetch cost + decide cost)
-    const double fetch = 0.12 * S[c].n_systems;          // hours per instance, per system opened
-    const double decide = 0.35 * S[c].decide_frac + 0.05;
-    wire_load[S[c].wire] += S[c].arrival_per_day * (fetch + decide);
-  }
-  double total_load = 0; for (int w = 0; w < W_N; ++w) total_load += wire_load[w];
-
-  // --- E-seats: ~62% of the firm is front-line E-work at a 500-seat HQ
-  const int n_e_ic = (int)std::round(target_n * 0.46);
-  int assigned = 0;
-  std::vector<int> wire_ic(W_N, 0);
-  for (int w = 0; w < W_N; ++w) { wire_ic[w] = (int)std::round(n_e_ic * (wire_load[w] / total_load)); assigned += wire_ic[w]; }
-  wire_ic[0] += n_e_ic - assigned;
-
-  auto add = [&](uint8_t kind, uint8_t fn, uint8_t wire, int boss, int depth, float salary, float attn) -> int {
-    Seat s{}; s.id = (int)f.seat.size(); s.kind = kind; s.fn = fn; s.wire = wire; s.boss = boss;
-    s.depth = depth; s.salary = salary; s.attention = attn; s.attn_left = attn;
-    for (int c = 0; c < 32; ++c) s.skill[c] = 0.f;
-    f.seat.push_back(s); return s.id;
-  };
-
-  // --- the top
-  const int ceo = add(SK_CSUITE, FN_WARRANT, W_N, -1, 0, 780000.f, 240.f);
-  std::vector<int> vps;
-  for (int w = 0; w < W_N; ++w)
-    vps.push_back(add(SK_VP, FN_WARRANT, (uint8_t)w, ceo, 1, 340000.f, 300.f));
-  // two α-VPs: the ones that exist because the company has people, not customers
-  const int vp_ops = add(SK_VP, FN_ALPHA, W_N, ceo, 1, 300000.f, 300.f);   // IT, facilities, PMO
-  const int vp_ppl = add(SK_VP, FN_ALPHA, W_N, ceo, 1, 295000.f, 300.f);   // HR, training, comms
-
-  // --- E-line: directors → managers → leads → ICs, span-driven
-  for (int w = 0; w < W_N; ++w) {
-    const int ics = wire_ic[w];
-    if (ics <= 0) continue;
-    const int leads = std::max(1, (int)std::ceil(ics / (double)span));
-    const int mgrs  = std::max(1, (int)std::ceil(leads / (double)span));
-    const int dirs  = std::max(1, (int)std::ceil(mgrs / (double)span));
-    std::vector<int> dir_ids, mgr_ids, lead_ids;
-    for (int d = 0; d < dirs; ++d)
-      dir_ids.push_back(add(SK_DIRECTOR, FN_E, (uint8_t)w, vps[w], 2, 215000.f, 240.f));
-    for (int m = 0; m < mgrs; ++m)
-      mgr_ids.push_back(add(SK_MANAGER, FN_E, (uint8_t)w, dir_ids[m % dirs], 3, 165000.f, 260.f));
-    for (int l = 0; l < leads; ++l)
-      lead_ids.push_back(add(SK_LEAD, FN_E, (uint8_t)w, mgr_ids[l % mgrs], 4, 132000.f, 300.f));
-    for (int i = 0; i < ics; ++i)
-      add(SK_IC, FN_E, (uint8_t)w, lead_ids[i % leads], 5, 98000.f, 330.f);
-  }
-
-  // --- the support pyramid: sized from N, which is the whole cascade mechanic.
-  // Ratios are the α-coefficients; they are what the regression must recover.
-  const int n_so_far = f.size();
-  struct AlphaFn { const char* name; double per_head; float salary; int boss; };
-  const AlphaFn A[] = {
-    { "IT / endpoint / network", 1.0 / 32.0, 118000.f, vp_ops },
-    { "internal helpdesk",       1.0 / 55.0,  86000.f, vp_ops },
-    { "facilities",              1.0 / 60.0,  74000.f, vp_ops },
-    { "PMO / programme",         1.0 / 45.0, 142000.f, vp_ops },
-    { "procurement of software", 1.0 / 90.0, 118000.f, vp_ops },
-    { "HR generalist",           1.0 / 48.0, 108000.f, vp_ppl },
-    { "L&D / training",          1.0 / 85.0,  99000.f, vp_ppl },
-    { "internal comms",          1.0 /110.0, 104000.f, vp_ppl },
-    { "recruiting",              1.0 / 70.0, 102000.f, vp_ppl },
-    { "QA of human error",       1.0 / 38.0, 112000.f, vp_ops },
-    { "reporting / BI",          1.0 / 65.0, 128000.f, vp_ops },
-  };
-  // Solve N = n_E + F + alpha*N for the α-headcount, then instantiate.
-  double alpha_sum = 0; for (const AlphaFn& a : A) alpha_sum += a.per_head;
-  const int F_floor = 9;                                     // the term a within-firm fit cannot see
-  const int N_star  = (int)std::round((n_so_far + F_floor) / (1.0 - alpha_sum));
-  f.alpha_true = (float)alpha_sum; f.F_true = (float)F_floor;
-
-  for (const AlphaFn& a : A) {
-    int k = std::max(1, (int)std::round(a.per_head * N_star));
-    // each α-function above ~span gets its own manager, which is more α
-    if (k > span) { const int m = add(SK_MANAGER, FN_ALPHA, W_N, a.boss, 2, 158000.f, 260.f);
-                    for (int i = 0; i < k; ++i) add(SK_IC, FN_ALPHA, W_N, m, 3, a.salary, 330.f); }
-    else          { for (int i = 0; i < k; ++i) add(SK_IC, FN_ALPHA, W_N, a.boss, 2, a.salary, 330.f); }
-  }
-  for (int i = 0; i < F_floor; ++i) add(SK_IC, FN_ALPHA, W_N, vp_ops, 2, 96000.f, 330.f);
-
-  // --- trim or pad to the target headcount, from the E-line's ICs
-  while (f.size() > target_n) {
-    int victim = -1;
-    for (int i = f.size() - 1; i >= 0; --i) if (f.seat[i].kind == SK_IC && f.seat[i].fn == FN_E) { victim = i; break; }
-    if (victim < 0) break;
-    f.seat.erase(f.seat.begin() + victim);
-    for (size_t i = 0; i < f.seat.size(); ++i) { f.seat[i].id = (int)i; if (f.seat[i].boss > victim) --f.seat[i].boss; }
-  }
-  while (f.size() < target_n) {
-    int host = -1; for (const Seat& s : f.seat) if (s.kind == SK_LEAD) { host = s.id; break; }
-    add(SK_IC, FN_E, f.seat[host].wire, host, 5, 98000.f, 330.f);
-  }
-
-  // --- specialisation and skill. Each seat handles a few classes inside its
-  // wire, not all of them, and a handful of people are genuinely the expert at
-  // one of them. THE ORG DOES NOT KNOW WHO. Nothing in the assignment path
-  // reads skill[]; the lead sees remaining attention and a specialty tag, which
-  // is exactly the information a real lead has.
-  for (Seat& s : f.seat) {
-    s.spec = 0u;
-    std::vector<int> own;
-    for (int c = 0; c < NC && c < 32; ++c) if (s.wire == S[c].wire) own.push_back(c);
-    if (s.fn != FN_ALPHA && !own.empty()) {
-      const int want = std::min<int>((int)own.size(), (s.kind == SK_IC) ? 2 + ubelow(seed, 640, s.id, 2)
-                                                                       : (int)own.size());
-      for (int k = 0; k < want; ++k) s.spec |= (1u << own[(ubelow(seed, 650 + k, s.id, (int)own.size()))]);
-      if (!s.spec) s.spec |= (1u << own[0]);
-    }
-    for (int c = 0; c < NC && c < 32; ++c) {
-      if (s.fn == FN_ALPHA) { s.skill[c] = 0.f; continue; }
-      const bool mine = (s.spec >> c) & 1u;
-      const bool in_wire = (s.wire == S[c].wire || s.wire == W_N);
-      float base = mine ? 0.55f : (in_wire ? 0.30f : 0.12f);
-      base += 0.05f * std::min<int>(s.kind, SK_DIRECTOR);
-      float sk = base + 0.17f * unrm(seed, 700 + c, s.id);
-      if (mine && ucoin(seed, 800 + c, s.id, 0.14f)) sk += 0.32f;   // the planted expert
-      s.skill[c] = std::min(0.99f, std::max(0.02f, sk));
-    }
-  }
-  // counts
-  for (const Seat& s : f.seat) switch (s.kind) {
-    case SK_IC: ++f.n_ic; break; case SK_LEAD: ++f.n_lead; break; case SK_MANAGER: ++f.n_mgr; break;
-    case SK_DIRECTOR: ++f.n_dir; break; case SK_VP: ++f.n_vp; break; default: ++f.n_c; break; }
-  return f;
-}
 
 // ----------------------------------------------------------------------------
 // WHERE THE PHYSICS LIVES (and what used to be here)

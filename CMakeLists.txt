@@ -38,7 +38,9 @@ set(LIE_LINE_14 "O1b")   # lie 14 = O1b, determinism over the machine arm (REV 2
 set(LIE_LINE_15 "O14")   # lie 15 = O14, fold-to-identity (a field set without a row)
 set(LIE_LINE_16 "O15")   # lie 16 = O15, the ladder is a fold (an outcome counted twice)
 set(LIE_LINE_17 "O29")   # lie 17 = O29, row-shape conformance (an ARRIVE with no due day)
-foreach(N RANGE 0 17)
+set(LIE_LINE_18 "O16")   # lie 18 = O16, a null judge licenses nothing (a truth-reading judge under the null's name)
+set(LIE_LINE_19 "O21")   # lie 19 = O21, the canary draw is independent of the band (a band-dependent draw)
+foreach(N RANGE 0 19)
   add_test(NAME lie_${N} COMMAND acme --selftest --lie ${N})
   set_tests_properties(lie_${N} PROPERTIES
     PASS_REGULAR_EXPRESSION "\\[PASS\\] ${LIE_LINE_${N}} "
@@ -60,8 +62,9 @@ if(Python3_Interpreter_FOUND)
   add_test(NAME no_clock_lie COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/dead_symbols.py ${CMAKE_SOURCE_DIR} --o25 --lie)
   set_tests_properties(no_clock     PROPERTIES PASS_REGULAR_EXPRESSION "\\[PASS\\] O25a" FAIL_REGULAR_EXPRESSION "\\[FAIL\\]")
   set_tests_properties(no_clock_lie PROPERTIES PASS_REGULAR_EXPRESSION "\\[PASS\\] O25a" FAIL_REGULAR_EXPRESSION "\\[FAIL\\]")
-  # O17 · the machine links without the plant. A build fact: the kernel's headers
-  # compile under -DACME_NO_PLANT and one include of world.h is refused (the lie).
+  # O17 · the machine links without the plant or the governor. A build fact: the
+  # kernel's headers compile under -DACME_NO_PLANT -DACME_NO_GOVERNOR, and one
+  # include of world.h or of governor.h is refused (the lies).
   add_test(NAME links_without_plant COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/o17.py ${CMAKE_SOURCE_DIR} ${CMAKE_CXX_COMPILER})
   set_tests_properties(links_without_plant PROPERTIES PASS_REGULAR_EXPRESSION "\\[PASS\\] O17 " FAIL_REGULAR_EXPRESSION "\\[FAIL\\]")
 endif()

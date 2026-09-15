@@ -1,5 +1,6 @@
 // ============================================================================
-//  acme/world.h — the world outside the firm, and the boundary between them
+//  acme/world.h — THE PLANT: the world outside the firm, and the boundary
+//                 between them
 //
 //  An obligation is a thing that is owed, by someone, to someone, by a certain
 //  time. It is the unit of work, and it is deliberately NOT a task: a task is a
@@ -26,6 +27,12 @@
 //  and that is a property of instrumentation, which is buyable, rather than of
 //  the model, which is not the bottleneck. The tacit fraction is planted per
 //  class and the compile step must MEASURE it without being shown it.
+//
+//  C1: THIS FILE HOLDS EVERYTHING PLANTED. The per-class round-trip facts (how
+//  many systems hold a class's determinants, how much of it is judgement), the
+//  generator of the firm, the determinants, the read physics and the grader.
+//  The kernel's translation unit cannot include it (O17); what the kernel knows
+//  of any of this, it recovered from rows.
 // ============================================================================
 #pragma once
 #ifdef ACME_NO_PLANT
@@ -37,6 +44,59 @@
 #include "port.h"
 
 namespace acme {
+
+// ----------------------------------------------------------------------------
+// §0 · THE PLANTED HALF OF THE CLASS TABLE
+//
+// n_systems is the round-trip cost driver: every system is a fetch a human must
+// do by hand through a UI, and the fetches are most of the day. decide_frac is
+// the fraction of the round trip that is real judgement. The compile step must
+// measure both from the tape (O6 recovers the join graph exactly; O13 recovers
+// the ranking of judgement intensity, never its level) and is never shown them.
+// ----------------------------------------------------------------------------
+struct PlantedSpec {
+  const char* name;       // must match the schema row of the same index; make_world checks
+  uint8_t n_systems;      // how many systems of record hold this class's determinants
+  float   decide_frac;    // PLANTED TRUTH: fraction of the round trip that is real judgment
+};
+inline const PlantedSpec* planted_table(int& n) {
+  static const PlantedSpec P[] = {
+    { "quote.price",          4, 0.22f },
+    { "quote.approve.disc",   3, 0.30f },
+    { "order.credit.check",   3, 0.14f },
+    { "order.fulfil.sched",   5, 0.11f },
+    { "invoice.issue",        2, 0.04f },
+    { "collections.chase",    3, 0.09f },
+    { "dispute.resolve",      5, 0.41f },
+    { "claim.intake.triage",  3, 0.12f },
+    { "claim.coverage.det",   5, 0.35f },
+    { "claim.reserve.set",    4, 0.28f },
+    { "claim.settle.auth",    4, 0.24f },
+    { "claim.fraud.refer",    6, 0.52f },
+    { "po.match.3way",        3, 0.05f },
+    { "vendor.onboard",       5, 0.33f },
+    { "contract.renew",       4, 0.38f },
+    { "spend.approve",        2, 0.16f },
+    { "req.approve",          3, 0.31f },
+    { "candidate.screen",     3, 0.27f },
+    { "leave.approve",        2, 0.03f },
+    { "accrual.post",         3, 0.08f },
+    { "recon.break.clear",    4, 0.19f },
+    { "forecast.adjust",      5, 0.45f },
+    { "kyc.review",           4, 0.20f },
+    { "reg.filing.prepare",   6, 0.29f },
+  };
+  n = (int)(sizeof(P) / sizeof(P[0]));
+  return P;
+}
+inline const PlantedSpec& planted(int c) { int n; const PlantedSpec* p = planted_table(n); return p[c < 0 ? 0 : (c < n ? c : n - 1)]; }
+// The two tables are one table split in two; this is the seam check.
+inline void assert_planted_aligned() {
+  int ns, np; const ClassSpec* S = schema(ns); const PlantedSpec* P = planted_table(np);
+  if (ns != np) { std::fprintf(stderr, "schema/planted tables differ in length (%d vs %d)\n", ns, np); std::abort(); }
+  for (int c = 0; c < ns; ++c)
+    if (strcmp(S[c].name, P[c].name) != 0) { std::fprintf(stderr, "schema/planted row %d: %s vs %s\n", c, S[c].name, P[c].name); std::abort(); }
+}
 
 enum DetWhere : uint8_t { DW_SYSTEM = 0, DW_BOUNDARY, DW_TACIT, DW_N };
 
@@ -69,15 +129,163 @@ struct World {
 };
 
 // ----------------------------------------------------------------------------
-// Build the world's ground truth: which facts decide what, and where they live.
+// §1 · Build ACME: a 500-seat knowledge-work headquarters.   [moved here in C1]
+//
+// The shape is derived from the span, not typed in. E-seats are allotted to the
+// six wires in proportion to arrival rate × handling cost, and then the support
+// pyramid is grown on top of the resulting headcount — which is the whole point:
+// the α-functions are sized from N, so when N falls they fall with it, whether
+// or not anyone automates what they do. The support coefficient and the fixed
+// floor it plants come back in `PlantedFirm`, beside the firm and never on it:
+// the cascade's regression must be caught missing F, so the kernel cannot hold F.
+// ----------------------------------------------------------------------------
+struct PlantedFirm { float alpha_true = 0.f; float F_true = 0.f; };
+
+inline Firm build_acme(int target_n = 500, int span = 7, uint64_t seed = 20260913, PlantedFirm* pf = nullptr) {
+  Firm f; f.span = span;
+  int NC; const ClassSpec* S = schema(NC);
+  assert_planted_aligned();
+
+  // --- how much E-work exists, per wire, in units of IC-days per day
+  double wire_load[W_N] = {0};
+  for (int c = 0; c < NC; ++c) {
+    // a class's daily human cost is arrivals × (fetch cost + decide cost)
+    const double fetch = 0.12 * planted(c).n_systems;          // hours per instance, per system opened
+    const double decide = 0.35 * planted(c).decide_frac + 0.05;
+    wire_load[S[c].wire] += S[c].arrival_per_day * (fetch + decide);
+  }
+  double total_load = 0; for (int w = 0; w < W_N; ++w) total_load += wire_load[w];
+
+  // --- E-seats: ~62% of the firm is front-line E-work at a 500-seat HQ
+  const int n_e_ic = (int)std::round(target_n * 0.46);
+  int assigned = 0;
+  std::vector<int> wire_ic(W_N, 0);
+  for (int w = 0; w < W_N; ++w) { wire_ic[w] = (int)std::round(n_e_ic * (wire_load[w] / total_load)); assigned += wire_ic[w]; }
+  wire_ic[0] += n_e_ic - assigned;
+
+  auto add = [&](uint8_t kind, uint8_t fn, uint8_t wire, int boss, int depth, float salary, float attn) -> int {
+    Seat s{}; s.id = (int)f.seat.size(); s.kind = kind; s.fn = fn; s.wire = wire; s.boss = boss;
+    s.depth = depth; s.salary = salary; s.attention = attn; s.attn_left = attn;
+    for (int c = 0; c < 32; ++c) s.skill[c] = 0.f;
+    f.seat.push_back(s); return s.id;
+  };
+
+  // --- the top
+  const int ceo = add(SK_CSUITE, FN_WARRANT, W_N, -1, 0, 780000.f, 240.f);
+  std::vector<int> vps;
+  for (int w = 0; w < W_N; ++w)
+    vps.push_back(add(SK_VP, FN_WARRANT, (uint8_t)w, ceo, 1, 340000.f, 300.f));
+  // two α-VPs: the ones that exist because the company has people, not customers
+  const int vp_ops = add(SK_VP, FN_ALPHA, W_N, ceo, 1, 300000.f, 300.f);   // IT, facilities, PMO
+  const int vp_ppl = add(SK_VP, FN_ALPHA, W_N, ceo, 1, 295000.f, 300.f);   // HR, training, comms
+
+  // --- E-line: directors → managers → leads → ICs, span-driven
+  for (int w = 0; w < W_N; ++w) {
+    const int ics = wire_ic[w];
+    if (ics <= 0) continue;
+    const int leads = std::max(1, (int)std::ceil(ics / (double)span));
+    const int mgrs  = std::max(1, (int)std::ceil(leads / (double)span));
+    const int dirs  = std::max(1, (int)std::ceil(mgrs / (double)span));
+    std::vector<int> dir_ids, mgr_ids, lead_ids;
+    for (int d = 0; d < dirs; ++d)
+      dir_ids.push_back(add(SK_DIRECTOR, FN_E, (uint8_t)w, vps[w], 2, 215000.f, 240.f));
+    for (int m = 0; m < mgrs; ++m)
+      mgr_ids.push_back(add(SK_MANAGER, FN_E, (uint8_t)w, dir_ids[m % dirs], 3, 165000.f, 260.f));
+    for (int l = 0; l < leads; ++l)
+      lead_ids.push_back(add(SK_LEAD, FN_E, (uint8_t)w, mgr_ids[l % mgrs], 4, 132000.f, 300.f));
+    for (int i = 0; i < ics; ++i)
+      add(SK_IC, FN_E, (uint8_t)w, lead_ids[i % leads], 5, 98000.f, 330.f);
+  }
+
+  // --- the support pyramid: sized from N, which is the whole cascade mechanic.
+  // Ratios are the α-coefficients; they are what the regression must recover.
+  const int n_so_far = f.size();
+  struct AlphaFn { const char* name; double per_head; float salary; int boss; };
+  const AlphaFn A[] = {
+    { "IT / endpoint / network", 1.0 / 32.0, 118000.f, vp_ops },
+    { "internal helpdesk",       1.0 / 55.0,  86000.f, vp_ops },
+    { "facilities",              1.0 / 60.0,  74000.f, vp_ops },
+    { "PMO / programme",         1.0 / 45.0, 142000.f, vp_ops },
+    { "procurement of software", 1.0 / 90.0, 118000.f, vp_ops },
+    { "HR generalist",           1.0 / 48.0, 108000.f, vp_ppl },
+    { "L&D / training",          1.0 / 85.0,  99000.f, vp_ppl },
+    { "internal comms",          1.0 /110.0, 104000.f, vp_ppl },
+    { "recruiting",              1.0 / 70.0, 102000.f, vp_ppl },
+    { "QA of human error",       1.0 / 38.0, 112000.f, vp_ops },
+    { "reporting / BI",          1.0 / 65.0, 128000.f, vp_ops },
+  };
+  // Solve N = n_E + F + alpha*N for the α-headcount, then instantiate.
+  double alpha_sum = 0; for (const AlphaFn& a : A) alpha_sum += a.per_head;
+  const int F_floor = 9;                                     // the term a within-firm fit cannot see
+  const int N_star  = (int)std::round((n_so_far + F_floor) / (1.0 - alpha_sum));
+  if (pf) { pf->alpha_true = (float)alpha_sum; pf->F_true = (float)F_floor; }
+
+  for (const AlphaFn& a : A) {
+    int k = std::max(1, (int)std::round(a.per_head * N_star));
+    // each α-function above ~span gets its own manager, which is more α
+    if (k > span) { const int m = add(SK_MANAGER, FN_ALPHA, W_N, a.boss, 2, 158000.f, 260.f);
+                    for (int i = 0; i < k; ++i) add(SK_IC, FN_ALPHA, W_N, m, 3, a.salary, 330.f); }
+    else          { for (int i = 0; i < k; ++i) add(SK_IC, FN_ALPHA, W_N, a.boss, 2, a.salary, 330.f); }
+  }
+  for (int i = 0; i < F_floor; ++i) add(SK_IC, FN_ALPHA, W_N, vp_ops, 2, 96000.f, 330.f);
+
+  // --- trim or pad to the target headcount, from the E-line's ICs
+  while (f.size() > target_n) {
+    int victim = -1;
+    for (int i = f.size() - 1; i >= 0; --i) if (f.seat[i].kind == SK_IC && f.seat[i].fn == FN_E) { victim = i; break; }
+    if (victim < 0) break;
+    f.seat.erase(f.seat.begin() + victim);
+    for (size_t i = 0; i < f.seat.size(); ++i) { f.seat[i].id = (int)i; if (f.seat[i].boss > victim) --f.seat[i].boss; }
+  }
+  while (f.size() < target_n) {
+    int host = -1; for (const Seat& s : f.seat) if (s.kind == SK_LEAD) { host = s.id; break; }
+    add(SK_IC, FN_E, f.seat[host].wire, host, 5, 98000.f, 330.f);
+  }
+
+  // --- specialisation and skill. Each seat handles a few classes inside its
+  // wire, not all of them, and a handful of people are genuinely the expert at
+  // one of them. THE ORG DOES NOT KNOW WHO. Nothing in the assignment path
+  // reads skill[]; the lead sees remaining attention and a specialty tag, which
+  // is exactly the information a real lead has.
+  for (Seat& s : f.seat) {
+    s.spec = 0u;
+    std::vector<int> own;
+    for (int c = 0; c < NC && c < 32; ++c) if (s.wire == S[c].wire) own.push_back(c);
+    if (s.fn != FN_ALPHA && !own.empty()) {
+      const int want = std::min<int>((int)own.size(), (s.kind == SK_IC) ? 2 + ubelow(seed, 640, s.id, 2)
+                                                                       : (int)own.size());
+      for (int k = 0; k < want; ++k) s.spec |= (1u << own[(ubelow(seed, 650 + k, s.id, (int)own.size()))]);
+      if (!s.spec) s.spec |= (1u << own[0]);
+    }
+    for (int c = 0; c < NC && c < 32; ++c) {
+      if (s.fn == FN_ALPHA) { s.skill[c] = 0.f; continue; }
+      const bool mine = (s.spec >> c) & 1u;
+      const bool in_wire = (s.wire == S[c].wire || s.wire == W_N);
+      float base = mine ? 0.55f : (in_wire ? 0.30f : 0.12f);
+      base += 0.05f * std::min<int>(s.kind, SK_DIRECTOR);
+      float sk = base + 0.17f * unrm(seed, 700 + c, s.id);
+      if (mine && ucoin(seed, 800 + c, s.id, 0.14f)) sk += 0.32f;   // the planted expert
+      s.skill[c] = std::min(0.99f, std::max(0.02f, sk));
+    }
+  }
+  // counts
+  for (const Seat& s : f.seat) switch (s.kind) {
+    case SK_IC: ++f.n_ic; break; case SK_LEAD: ++f.n_lead; break; case SK_MANAGER: ++f.n_mgr; break;
+    case SK_DIRECTOR: ++f.n_dir; break; case SK_VP: ++f.n_vp; break; default: ++f.n_c; break; }
+  return f;
+}
+
+// ----------------------------------------------------------------------------
+// §2 · Build the world's ground truth: which facts decide what, and where they live.
 // ----------------------------------------------------------------------------
 inline World make_world(uint64_t seed) {
   World w; w.seed = seed;
-  const ClassSpec* S = schema(w.NC);
+  schema(w.NC);
+  assert_planted_aligned();
   w.spec.resize(w.NC); w.tacit.assign(w.NC, 0.f); w.n_det.assign(w.NC, 0);
 
   for (int c = 0; c < w.NC; ++c) {
-    const ClassSpec& s = S[c];
+    const PlantedSpec& s = planted(c);
     // more systems means more determinants, and a judgement-heavy class has a
     // longer tail of them
     const int nd = 3 + s.n_systems + (int)(6.0f * s.decide_frac);
@@ -165,9 +373,11 @@ inline void world_arrive(World& w, Ledger& L, Tape& tape, uint32_t day) {
 // ----------------------------------------------------------------------------
 // CONTEXT ASSEMBLY — the mechanic the whole simulation turns on.
 //
-// completeness_from_fetch: what fraction of a class's determinant mass a decider
-// actually holds, given which systems they opened, whether they read the inbound
-// document, and whether the tacit facts reached them.
+// gather(): what fraction of a class's determinant mass a decider actually
+// holds, given which systems they opened, whether they read the inbound
+// document, and whether the tacit facts reached them, and the signal that
+// mass carries. (C0's completeness_from, the same sum without the signal, had
+// no caller once the judge read through gather() and was deleted in C1.)
 //
 // A human gets tacit facts only by TALKING TO SOMEONE — which is what a meeting
 // or a hallway conversation actually is, and it is the one thing a meeting does
@@ -189,19 +399,17 @@ inline float full_signal(const World& w, const Obligation& o) {
 }
 inline int truth_decision(const World& w, const Obligation& o) { return full_signal(w, o) > 0.f ? 1 : 0; }
 
-// What a decider actually reads. Determinants they did not gather contribute
-// nothing — they do not get a wrong value, they get NO value, which is exactly
-// how a missing fact biases a real decision toward the prior. Judgement noise
-// scales with how much of the class is judgement and how little competence the
-// decider has: a routine class is robust to a mediocre decider, a contested one
-// is not.
-struct Read { float signal; float completeness; int choice; };
-inline Read observe(const World& w, const Obligation& o, uint32_t systems_mask,
-                    bool read_boundary, float tacit_share, float competence,
-                    uint64_t noise_key) {
-  const TrueSpec& t = w.spec[o.cls];
-  const ClassSpec& sp = cls_spec(o.cls);
-  Read r{}; r.signal = 0.f; r.completeness = 0.f;
+// What a decider gathers, before any judgement: the determinants in hand,
+// summed with their weights, and the completeness that sum represents.
+// Determinants they did not gather contribute nothing — they do not get a wrong
+// value, they get NO value, which is exactly how a missing fact biases a real
+// decision toward the prior. C1 splits this out of observe() so that a judge
+// behind the port can add its OWN noise from its OWN key (F16).
+struct Gathered { float signal; float completeness; };
+inline Gathered gather(const World& w, uint32_t oid, int cls, uint32_t systems_mask,
+                       bool read_boundary, float tacit_share) {
+  const TrueSpec& t = w.spec[cls];
+  Gathered g{}; g.signal = 0.f; g.completeness = 0.f;
   for (size_t d = 0; d < t.det.size(); ++d) {
     const Determinant& x = t.det[d];
     float share = 0.f;
@@ -210,28 +418,31 @@ inline Read observe(const World& w, const Obligation& o, uint32_t systems_mask,
       case DW_SYSTEM:   share = (systems_mask & (1u << x.system)) ? 1.f : 0.f; break;
       case DW_TACIT:    share = tacit_share; break;
     }
-    r.signal += share * x.weight * det_value(w, o.id, (int)d);
-    r.completeness += share * x.weight;
+    g.signal += share * x.weight * det_value(w, oid, (int)d);
+    g.completeness += share * x.weight;
   }
-  const float noise_sd = 0.08f + 0.90f * sp.decide_frac * (1.f - competence);
-  r.signal += noise_sd * unrm(w.seed ^ noise_key, 5200, o.id);
-  r.choice = (r.signal > 0.f) ? 1 : 0;
-  r.completeness = std::min(1.f, r.completeness);
-  return r;
+  g.completeness = std::min(1.f, g.completeness);
+  return g;
+}
+// The judgement noise: it scales with how much of the class is judgement and
+// how little competence the decider has. A routine class is robust to a
+// mediocre decider, a contested one is not.
+inline float judgement_noise_sd(int cls, float competence) {
+  return 0.08f + 0.90f * planted(cls).decide_frac * (1.f - competence);
 }
 
-inline float completeness_from(const World& w, int c, uint32_t systems_mask,
-                               bool read_boundary, float tacit_share) {
-  const TrueSpec& t = w.spec[c];
-  float got = 0.f;
-  for (const Determinant& d : t.det) {
-    switch (d.where) {
-      case DW_BOUNDARY: if (read_boundary) got += d.weight; break;
-      case DW_SYSTEM:   if (systems_mask & (1u << d.system)) got += d.weight; break;
-      case DW_TACIT:    got += d.weight * tacit_share; break;
-    }
-  }
-  return std::min(1.f, got);
+// What a HUMAN decider actually reads: the gathered sum plus noise drawn from
+// the world's seed (people are part of the plant). The machine's read is the
+// judge's, behind the port, on its own key.
+struct Read { float signal; float completeness; int choice; };
+inline Read observe(const World& w, const Obligation& o, uint32_t systems_mask,
+                    bool read_boundary, float tacit_share, float competence,
+                    uint64_t noise_key) {
+  const Gathered g = gather(w, o.id, o.cls, systems_mask, read_boundary, tacit_share);
+  Read r{}; r.signal = g.signal; r.completeness = g.completeness;
+  r.signal += judgement_noise_sd(o.cls, competence) * unrm(w.seed ^ noise_key, 5200, o.id);
+  r.choice = (r.signal > 0.f) ? 1 : 0;
+  return r;
 }
 
 // The world settles what has been decided, after each class's verdict latency.
@@ -261,36 +472,77 @@ inline void world_settle(World& w, Ledger& L, const Firm& f, Tape& tape, uint32_
 }
 
 // ----------------------------------------------------------------------------
-// THE PLANT BEHIND THE PORT. C0: the machine reads cells through Store::frame
-// and judges them through Judge::read, and what stands behind both is the
-// plant's own arithmetic, bit for bit what v1 computed inline. C1 replaces
-// the coverage with the compile step's estimate and the noise key and the act
-// coin with the judge's own; every number that moves then is named.
+// §3 · THE PLANT BEHIND THE PORT.
+//
+// The STORE answers what a cell's record holds: in the synthetic world the
+// determinant values behind the instrumented systems and the boundary, which
+// are a pure function of (oid, class, mask), so the frame hash is a hash of
+// exactly that. It knows nothing of coverage: the kernel stamps its own
+// estimate on the frame before the judge sees it.
+//
+// The JUDGE is the plant's read arithmetic over what the store gathered, with
+// a competence of its own and noise drawn from ITS OWN seed (F16: v1 drew the
+// machine's noise and the rented mind's coin from the world's seed). Two
+// instances stand behind the port in ACME: the resident judge, which starts
+// clumsy and learns its competence from the outcomes the kernel tells it about
+// [P], and the frontier judge at a fixed high competence [P]. Both are stand-ins
+// for a model; the gym sweeps their competence so the kernel is trained robust
+// to how good the real judge turns out to be.
 // ----------------------------------------------------------------------------
 struct PlantStore : Store {
   const World* w;
   explicit PlantStore(const World* world) : w(world) {}
   Frame frame(uint32_t oid, int cls, uint32_t systems_mask) const override {
     Frame f; f.cls = cls; f.oid = oid; f.systems_mask = systems_mask; f.boundary = true;
-    f.coverage_hat = completeness_from(*w, cls, systems_mask, true, 0.f);   // C0: the plant's completeness for the mask
-    f.frame_hash = 0;                                                      // C1: f(rows, template pin, span contents)
+    f.coverage_hat = 0.f;                                                  // the kernel's to stamp
+    // the record's content hash: in the synthetic world the record is a pure
+    // function of (oid, cls, mask); a real store hashes the cell's rows
+    Blake2b b; b.update(&oid, 4); b.update(&cls, 4); b.update(&systems_mask, 4);
+    uint8_t h[32]; b.final(h);
+    f.frame_hash = (uint32_t)h[0] | ((uint32_t)h[1] << 8) | ((uint32_t)h[2] << 16) | ((uint32_t)h[3] << 24);
     return f;
   }
 };
 
 struct PlantJudge : Judge {
   const World* w;
-  explicit PlantJudge(const World* world) : w(world) {}
-  Proposal read(const Frame& f, float competence, uint64_t noise_key) override {
-    Obligation o{}; o.id = f.oid; o.cls = (uint16_t)f.cls;                  // observe() reads only id and cls
-    const Read r = observe(*w, o, f.systems_mask, f.boundary, 0.f, competence, noise_key);
-    Proposal p; p.choice = r.choice; p.signal = r.signal; p.completeness_hat = r.completeness; p.judge_hash = hash();
+  uint64_t judge_seed;                 // the judge's own key: never the world's seed
+  uint32_t id_hash;
+  bool     learns;
+  std::vector<float> comp, comp_n;     // competence per class, and the evidence behind it
+  PlantJudge(const World* world, uint64_t seed, uint32_t hash_, float comp0, bool learns_)
+    : w(world), judge_seed(seed), id_hash(hash_), learns(learns_), comp(world->NC, comp0), comp_n(world->NC, 0.f) {}
+  Proposal read(const Frame& f) override {
+    const Gathered g = gather(*w, f.oid, f.cls, f.systems_mask, f.boundary, 0.f);
+    Proposal p;
+    p.signal = g.signal + judgement_noise_sd(f.cls, competence(f.cls)) * unrm(judge_seed, 5200, f.oid);
+    p.choice = (p.signal > 0.f) ? 1 : 0;
+    p.completeness_hat = f.coverage_hat;                                   // it reports what it was told it holds
+    p.judge_hash = id_hash;
     return p;
   }
-  // F16 preserved in C0 so the numbers do not move: the coin is still drawn from
-  // the world's seed. C1 keys it on the judge.
-  bool act_coin(int cls, uint32_t oid, float p) override { return u01(w->seed, 7200 + cls, oid) < p; }
-  uint32_t hash() const override { return 0x504C4A31u; }                  // 'PLJ1': the plant's read arithmetic, v1
+  // The rented mind's coin, drawn by the judge on its own key (F16).
+  bool act_coin(int cls, uint32_t oid, float p) override { return u01(judge_seed, 7200 + cls, oid) < p; }
+  // The kernel tells the judge what the world said about a cell it decided.
+  // A stand-in model gets better with feedback [P]; a real model may ignore it.
+  // This is never evidence for a licence: the ladder consumes OUTCOME rows.
+  void observe(int cls, bool right) override {
+    if (!learns || cls < 0 || cls >= (int)comp.size()) return;
+    const float k = 1.f / (comp_n[cls] + 8.f);
+    comp[cls] += k * ((right ? 1.f : 0.f) - comp[cls]);
+    comp_n[cls] += 1.f;
+  }
+  float competence(int cls) const {
+    if (cls < 0 || cls >= (int)comp.size()) return 0.6f;
+    return std::min(0.97f, std::max(0.40f, comp[cls]));
+  }
+  uint32_t hash() const override { return id_hash; }
 };
+
+// The two judges ACME runs with, and the keys that name them.
+enum : uint32_t { JUDGE_RESIDENT_HASH = 0x504C4A32u,    // 'PLJ2': the plant's arithmetic, own key, learning competence
+                  JUDGE_FRONTIER_HASH = 0x504C4631u };  // 'PLF1': the plant's arithmetic at a fixed high competence
+inline PlantJudge make_resident_judge(const World* w) { return PlantJudge(w, 0x4A55444745ULL /*'JUDGE'*/, JUDGE_RESIDENT_HASH, 0.55f, true); }
+inline PlantJudge make_frontier_judge(const World* w) { return PlantJudge(w, 0x46524F4E54ULL /*'FRONT'*/, JUDGE_FRONTIER_HASH, 0.96f, false); }
 
 } // namespace acme

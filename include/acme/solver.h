@@ -87,11 +87,14 @@ struct Field {
     skill_n.assign((size_t)ns * nc, 0.f);
     cls_mu.assign(nc, 0.f); cls_sd.assign(nc, 1.f);
     calib.assign((size_t)nc * CALIB, 0.f); calib_n.assign(nc, 0);
-    init_mach(nc);
     m_w.assign(w.size(), 0.f); v_w.assign(w.size(), 0.f); t_adam = 0;
   }
 
-  static void feats(const ClassSpec& sp, float completeness, float skill, float late,
+  // C1: the judgement-intensity feature is the MEASURED decide fraction of the
+  // class (a fold of ACT rows, machine.h), never the planted one. Its level is
+  // biased upward (O13) and only its ranking is recovered, so it is centred on
+  // the measured mean the caller passes rather than on a planted constant.
+  static void feats(const ClassSpec& sp, float dfrac_measured, float completeness, float skill, float late,
                     float load, float hops, float out[FT_N]) {
     out[FT_BIAS]     = 1.f;
     out[FT_COMPLETE] = completeness - 0.6f;
@@ -100,7 +103,7 @@ struct Field {
     out[FT_LOAD]     = load;
     out[FT_VALUE]    = std::log10(std::max(1.f, sp.value)) - 4.f;
     out[FT_HOPS]     = hops * 0.25f;
-    out[FT_DFRAC]    = sp.decide_frac - 0.2f;
+    out[FT_DFRAC]    = dfrac_measured - 0.3f;
   }
   // logit of P(good). One place. Training, decoding and forecasting all call it.
   float logit(int c, const float f[FT_N]) const {
@@ -126,22 +129,10 @@ struct Field {
       w[i] -= lr * (m_w[i] / c1) / (std::sqrt(v_w[i] / c2) + eps);
     }
   }
-  // THE RESIDENT'S OWN READING SKILL, per class, learned from arrivals. It is
-  // not given: a fresh field reads the record clumsily and gets better as the
-  // world grades it. This is the only sense in which the machine "improves",
-  // and it is bounded above by what is instrumented, never by model quality.
-  std::vector<float> mach_skill, mach_n;
-  void init_mach(int nc) { mach_skill.assign(nc, 0.55f); mach_n.assign(nc, 0.f); }
-  void observe_mach(int c, int good) {
-    if (c < 0 || c >= (int)mach_skill.size()) return;
-    const float k = 1.f / (mach_n[c] + 8.f);
-    mach_skill[c] += k * ((float)good - mach_skill[c]);
-    mach_n[c] += 1.f;
-  }
-  float mach_skill_of(int c) const {
-    if (c < 0 || c >= (int)mach_skill.size()) return 0.6f;
-    return std::min(0.97f, std::max(0.40f, mach_skill[c]));
-  }
+  // C1: the machine's READING skill is not the field's to hold. It belongs to
+  // the judge behind the port (a real model's competence is its own; the plant's
+  // stand-in learns it from the outcomes the kernel tells it about). What the
+  // kernel holds about the judge is its calibration, measured on the tape.
 
   // COMPETENCE IS A RESIDUAL, not a hit rate. A seat's raw good-rate is
   // dominated by how complete its context happened to be, which is a property
@@ -261,7 +252,9 @@ enum Verdict : uint8_t {
 };
 enum Reason : uint8_t {
   RS_OK = 0, RS_UNLICENSED, RS_THIN, RS_NOVEL, RS_IRREVERSIBLE, RS_LAW,
-  RS_NO_BUDGET, RS_BLOCKED, RS_AUDIT, RS_CANARY, RS_UNSURE, RS_N
+  RS_NO_BUDGET, RS_BLOCKED, RS_AUDIT, RS_CANARY, RS_UNSURE,
+  RS_UNREAD,         // C1: the read budget never reached this cell and it carries no proposal: a hold
+  RS_N
 };
 inline const char* verdict_name(int v) { static const char* n[] = {"HOLD","ACT","DRAFT","FRONTIER","WARRANT"}; return n[v % V_N]; }
 inline const char* reason_name(int r);
@@ -289,7 +282,7 @@ inline uint32_t alphabet_hash() {
   return (uint32_t)h[0] | ((uint32_t)h[1] << 8) | ((uint32_t)h[2] << 16) | ((uint32_t)h[3] << 24);
 }
 inline const char* reason_name(int r) {
-  static const char* n[] = {"ok","unlicensed","thin-margin","novel-case","irreversible","law","no-adjudication-budget","blocked-by-dep","audit-sample","canary","unsure-placement"};
+  static const char* n[] = {"ok","unlicensed","thin-margin","novel-case","irreversible","law","no-adjudication-budget","blocked-by-dep","audit-sample","canary","unsure-placement","unread"};
   return n[r % RS_N];
 }
 

@@ -111,9 +111,22 @@ struct Ledger {
   int      mode = -1, sw = -1; uint32_t schema = 0; int ver = 0;
   std::vector<TimeLedger> by_class;           // the minute meter per class (a fold of ACT rows)
   TimeLedger              total;
-  std::vector<float>      last_prop_complete; // last proposal per oid, so an EFFECT can carry it
+  // C1: THE MEMO. The last proposal per oid is a fold of PROPOSAL rows: the
+  // kernel carries it forward while the cell's frame hash is unchanged and
+  // reads the judge again only when it changed, or the floor sample says so.
+  struct LastProp { int choice = 0; float direction = 0.f, completeness_hat = 0.f; uint32_t judge_hash = 0; uint32_t day = 0; uint8_t band = 0; bool valid = false; };
+  std::vector<LastProp>   last_prop;          // [oid]
+  // C1: THE STRATA. The governor draws canary / audit / retained per open oid
+  // before the machine's period and writes STRATUM rows; the gate reads them
+  // from here and never touches the salt. Valid for the period they were drawn in.
+  std::vector<uint8_t>    stratum_kind;       // [oid] 0 none · 1 canary · 2 audit · 3 retained-control
+  std::vector<uint32_t>   stratum_day;        // [oid] the period the draw belongs to (+1; 0 = never drawn)
+  std::vector<float>      stratum_rate;       // [oid] the canary rate the last draw was made against
 
   void init(int nc) { NC = nc; by_class.assign(nc, TimeLedger{}); }
+  const LastProp* memo(uint32_t oid) const { return (oid < last_prop.size() && last_prop[oid].valid) ? &last_prop[oid] : nullptr; }
+  int stratum_of(uint32_t oid, uint32_t day_) const { return (oid < stratum_kind.size() && stratum_day[oid] == day_ + 1) ? (int)stratum_kind[oid] : 0; }
+  float stratum_rate_of(uint32_t oid) const { return oid < stratum_rate.size() ? stratum_rate[oid] : 0.f; }
 
   Obligation* at_oid(uint32_t oid) {
     if (oid == 0 || oid >= idx_of_oid.size() || idx_of_oid[oid] == 0) return nullptr;
@@ -183,7 +196,7 @@ struct Ledger {
         Obligation* o = at_oid(r.oid); if (!o) return;
         // reasons 1 (blocked) and 2 (no attention) are written without touching the
         // case; only reason 3, a day that ended mid-case, is a touch
-        if (r.a == 3 && r.seat >= 0) { o->state = OB_INPROG; o->completeness = r.value; o->margin = r.margin; o->last_touch = r.day; }
+        if (r.a == 3 && r.seat >= 0) { o->state = OB_INPROG; o->completeness = r.value; o->margin = r.margin; o->band = r.band; o->last_touch = r.day; }
         return;
       }
       case R_ESCALATE: {
@@ -203,15 +216,22 @@ struct Ledger {
         return;
       }
       case R_PROPOSAL: {
-        if (r.oid >= last_prop_complete.size()) last_prop_complete.resize((size_t)r.oid + 1024, 0.f);
-        last_prop_complete[r.oid] = r.value;
+        if (r.oid >= last_prop.size()) last_prop.resize((size_t)r.oid + 1024, LastProp{});
+        LastProp& p = last_prop[r.oid];
+        p.choice = r.a; p.judge_hash = (uint32_t)r.b; p.direction = r.margin; p.completeness_hat = r.value;
+        p.band = r.band; p.day = r.day; p.valid = true;
+        return;
+      }
+      case R_STRATUM: {
+        if (r.oid >= stratum_kind.size()) { stratum_kind.resize((size_t)r.oid + 1024, 0); stratum_day.resize((size_t)r.oid + 1024, 0); stratum_rate.resize((size_t)r.oid + 1024, 0.f); }
+        stratum_kind[r.oid] = (uint8_t)r.a; stratum_day[r.oid] = r.day + 1; stratum_rate[r.oid] = (float)r.b * 1e-6f;
         return;
       }
       case R_EFFECT: {
         Obligation* o = at_oid(r.oid); if (!o) return;
         o->decision = r.a; o->state = OB_DECIDED; o->day_decided = r.day; o->by_machine = 1;
         o->via = r.via; o->band = r.band; o->margin = r.margin;
-        if (r.oid < last_prop_complete.size()) o->completeness = last_prop_complete[r.oid];
+        if (const LastProp* p = memo(r.oid)) o->completeness = p->completeness_hat;
         return;
       }
       case R_UNDO: {
@@ -225,7 +245,7 @@ struct Ledger {
         o->outcome = (uint8_t)r.a; o->state = OB_SETTLED; o->day_settled = r.day;
         return;
       }
-      default: return;   // LICENSE, KAPPA, PATCH, STRATUM, COUNSEL, RECEIPT, CORRECTION, NOTE: no ledger effect here
+      default: return;   // LICENSE, KAPPA, PATCH, COUNSEL, RECEIPT, CORRECTION, NOTE: no ledger effect here
     }
   }
 
@@ -282,7 +302,32 @@ inline FoldDiff ledger_diff(const Ledger& L, const Ledger& w) {
   }
   if (L.open_idx != w.open_idx) miss("open_idx", 0);
   if (L.next_id != w.next_id) miss("next_id", 0);
+  // C1: the memo and the strata are folds too, and the live ledger keeps them
+  // by applying the very row it wrote, so they must agree entry for entry.
+  const size_t np = std::max(L.last_prop.size(), w.last_prop.size());
+  for (size_t i = 0; i < np; ++i) {
+    const Ledger::LastProp a = i < L.last_prop.size() ? L.last_prop[i] : Ledger::LastProp{};
+    const Ledger::LastProp b = i < w.last_prop.size() ? w.last_prop[i] : Ledger::LastProp{};
+    if (a.valid != b.valid || (a.valid && (a.choice != b.choice || a.direction != b.direction || a.completeness_hat != b.completeness_hat
+                                          || a.judge_hash != b.judge_hash || a.day != b.day || a.band != b.band))) miss("last_prop", i);
+  }
+  const size_t ns = std::max(L.stratum_kind.size(), w.stratum_kind.size());
+  for (size_t i = 0; i < ns; ++i) {
+    const uint8_t ka = i < L.stratum_kind.size() ? L.stratum_kind[i] : 0, kb = i < w.stratum_kind.size() ? w.stratum_kind[i] : 0;
+    const uint32_t da = i < L.stratum_day.size() ? L.stratum_day[i] : 0, db = i < w.stratum_day.size() ? w.stratum_day[i] : 0;
+    const float ra = i < L.stratum_rate.size() ? L.stratum_rate[i] : 0.f, rb = i < w.stratum_rate.size() ? w.stratum_rate[i] : 0.f;
+    if (ka != kb || da != db || ra != rb) miss("stratum", i);
+  }
   return d;
+}
+
+// The live path writes a row and folds it into its own ledger in one motion, so
+// the live state of the memo and the strata is the fold by construction.
+inline void put_fold(Tape& tape, Ledger& L, RecType t, uint32_t day, uint32_t oid, int cls, int seat, int arm,
+                     int a = 0, int b = 0, float margin = 0.f, float value = 0.f, int band = 0, int flags = 0,
+                     int via = 0, int prov = PROV_D) {
+  tape.put(t, day, oid, cls, seat, arm, a, b, margin, value, band, flags, via, prov);
+  L.apply(tape.rec.back());
 }
 
 // The minute meter is a fold too: the folded ledger against the live HumanStats.
