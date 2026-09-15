@@ -102,7 +102,7 @@ Model capability enters the ignition criterion nowhere: the licence widens on `n
 
 ### 1.6 The seam rule
 
-> **The kernel owns WHEN, WHERE, WHETHER and HOW MUCH. The model owns the map from the open alphabet to the closed one. The seam is a typed row carrying a scalar margin, a provenance and three hashes.**
+> **The kernel owns WHEN, WHERE, WHETHER and HOW MUCH. The model owns the map from the open alphabet to the closed one. The seam is a typed row carrying a scalar margin, a provenance and three hashes.** In short: zero-copy context, proof-carrying action — state and cognition may converge (the memo, the warm cell already read); judgment and authority never do (the gate, the licence, O30).
 
 The closed alphabet (the event schema, hash-pinned) says what may cross; the proposal's margin says what the kernel needs from whoever answers; the judge hash, the template hash and the schema hash say what was asked, with what context, under which contract. The model's only property the kernel ever consumes is its **calibration**, margin → wrong-rate per licence key, measured on the shadow tape and never assumed. That is what lets the kernel be trained headless on a stub judge whose competence is swept, and what lets a model be swapped without losing the evidence: the rungs are re-earned on the same tape.
 
@@ -468,7 +468,7 @@ The only LLM-attach port that exists in code today is `fusord`'s asynchronous **
 
 ### 6.1 Why the edge must be resident
 
-A judgment made by a called function is a judgment about the instant the function was called: the recurrent state cannot be rewound, so a delayed judgment is a judgment about now. The free channels — the boundary mass that says a thought finished, the surprisal of the arriving word, the un-say that kills a line mid-word when the world answers first, the hold that is a row — exist only inside an owned continuous loop over one trunk. A served endpoint asked to reuse its own cache re-encodes the entire context **[M, F-PERSIST]**; a poll pays full inference at cadence while decode-on-delta pays ingest at the world's rate. This is the one place where "no new architecture" is false: the model is unchanged; the serving is new, and it cannot be bought behind an API.
+A judgment made by a called function is a judgment about the instant the function was called: the recurrent state cannot be rewound, so a delayed judgment is a judgment about now. The channels that come already paid for — the boundary mass that says a thought finished, the surprisal of the arriving word, the un-say that kills a line mid-word when the world answers first, the hold that is a row — are by-products of a forward pass the loop was running anyway; none is free, each is a marginal cost on a computation already bought, and each transport of one across a modality is proven, never assumed. They exist only inside an owned continuous loop over one trunk. A served endpoint asked to reuse its own cache re-encodes the entire context **[M, F-PERSIST]**; a poll pays full inference at cadence while decode-on-delta pays ingest at the world's rate. This is the one place where "no new architecture" is false: the model is unchanged; the serving is new, and it cannot be bought behind an API.
 
 ### 6.2 The kernel as built **[AS BUILT, `fusord.cpp`, one C++ process, one consumer card, a tuned 9B hybrid]**
 
@@ -580,6 +580,8 @@ Decision mass after licensing, by reason **[M]**: **licensed 63.7** · **warrant
 - **Terms-per-rung** beside every rung claim, with δ beside it.
 - The per-class **coverage price** beside every flatten.
 - The per-type **row histogram**, from which S becomes computable on writes.
+- **Cognitive path length** per class and per arm **[D1]**: the rows between `ARRIVE` and the terminal `DECIDE`/`EFFECT` (fetches, frames, handoffs, escalations, holds in force), the distinct seats passed through, and the days. The print that says whether the interior was deleted or moved: a licensed class the resident disposes of in one read and one effect has path length two; one it escalates daily has not been shortened (kill F-PATH).
+- The **frontier bill by value decile** **[D1]**: what the rented mind is spent on, before step E ranks its queue by margin thinness × value.
 
 ---
 
@@ -597,7 +599,7 @@ Across demand 1.5 / 1.0 / 0.7 **[M, roundtable]**: net −589.8 / −294.5 / −
 
 ### 10.2 The multiverse
 
-Best-of-N continuations under edited constraints, sharing one prefix and one physics: ten structural patches (buy a lane on a class, thin margin, span, kappa cap, ε floor, baseline), six rollouts each, 200 days, reweighted by the writ with pessimism. Every patch carries an inverse and lands as a `PATCH` row **[v2]**. Result **[M]**: the three lane-buying patches take the top three places in both runs, the best by $6.6M on an $8M spread — under one standard error, a direction and not a verdict; with the queue priced, acting sooner beats acting later. On the GPU this is §7.2; on the CPU it is 35–44 minutes for sixty rollouts. It prunes; it never promotes.
+Best-of-N continuations under edited constraints, sharing one prefix and one physics: ten structural patches (buy a lane on a class, thin margin, span, kappa cap, ε floor, baseline), six rollouts each, 200 days, reweighted by the writ with pessimism. Every patch carries an inverse and lands as a `PATCH` row **[v2]**. Result **[M]**: the three lane-buying patches take the top three places in both runs, the best by $6.6M on an $8M spread — under one standard error, a direction and not a verdict; with the queue priced, acting sooner beats acting later. On the GPU this is §7.2; on the CPU it is 35–44 minutes for sixty rollouts. It prunes; it never promotes: the multiverse says this configuration looks better, and only the world says the machine has earned the right to run it.
 
 ---
 
@@ -765,6 +767,7 @@ Run: the act-loop kill (twice); the demand sweep; the meetings-off twin; the δ-
 12. **The greenfield arm.** Every draft an unattended act, on the fitted world: the wrong rate and the minutes.
 13. **The verdict law's own kill.** If shadow calibration predicts disagreement-band outcomes at the first desk canary, the boundary licenses faster than this document claims.
 14. **F-HOSTILE** (registered 2026-09-14 after an outside read of the code). The synthetic world embodies the thesis: `p_tacit = 0.02 + 0.38 · decide_frac` plants that judgement-heavy work is the unrecorded work, seat skill is planted per specialty, arrivals are seasonal Poisson, dependencies are 9 percent. So ACME proves that the instrument recovers a planted structure and exploits it, not that real firms have that structure. The kill: a family of hostile worlds in the gym (step H) that scramble those relations one at a time — tacit mass independent of, or inverse to, judgement intensity; the heaviest determinant always tacit; skills uncorrelated with specialisation; bursty arrivals; dependency chains — under which the thesis is false, and the instrument must **report** that world (coverage falls, licensed mass falls, kappa demotes) rather than win in it. An instrument that licenses the same mass in a hostile world is reading the plant, and O17 is not enough. One variant is adversarial people: seats whose tacit share rises as instrumentation lands and whose escalations multiply once the machine is live, the organization making itself less legible to the meter; the instrument must read the falling coverage and say so.
+15. **F-PATH** (registered 2026-09-14). On every class the resident has licensed, its cognitive path length (§9.3) must be shorter than the incumbent's on the same class — fewer rows, fewer seats, fewer days from arrival to disposition. A licensed class with a path as long as the person's (escalated to the same warrant seat every period, re-rented daily) is a round trip relabelled, not an interior deleted, and the licensed-mass figure must not count it as automation.
 
 ---
 
