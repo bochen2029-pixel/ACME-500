@@ -27,7 +27,7 @@ Build 0 warnings. `--selftest` **22 of 22** (20.0 s: five short automate runs no
   [PASS] O21  ... (chi-square 10352.6 on 72 class-band cells against a 99.9% point of 114.9)                                       lie 19: a band-dependent draw, caught
 ```
 
-O17 green on both lies (`world.h` and `governor.h` refused under their guards), O28 green (18 functions, nothing dead: `completeness_from` lost its last caller to `gather()` and was deleted), O25a green over `port.h` and `license.h` too. `--sim`: every reading identical to C0 (82,479 settled, 42.7 / 48.9 / 8.4, cycle 51.9, 123,927 open); the chain head moves from `b01905e496dba40e` to `3f9a4a26fab68e5c` because the alphabet pin moved (the schema lost two planted fields and gained one authored one; `unread` joined the reasons) and the HEADER row carries it. Tree 4,551 lines.
+O17 green on both lies (`world.h` and `governor.h` refused under their guards), O28 green (18 functions, nothing dead: `completeness_from` lost its last caller to `gather()` and was deleted), O25a green over `port.h` and `license.h` too. `--sim`: every reading identical to C0 (82,479 settled, 42.7 / 48.9 / 8.4, cycle 51.9, 123,927 open); the chain head moves from `b01905e496dba40e` to `3f9a4a26fab68e5c` for two named reasons: the alphabet pin moved (the schema lost two planted fields and gained one authored one; `unread` joined the reasons) and the HEADER row carries it, and the mid-case `HOLD` row now carries the band (§0, the fold gap). The row count is the same 5,673,669 and no reading moved. Tree 4,551 lines.
 
 ## 2 · The readings, C0 → C1, each delta named
 
