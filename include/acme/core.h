@@ -267,14 +267,19 @@ struct Tape {
     if (n == 0) memset(head, 0, 32); else memcpy(head, chain.data() + (n - 1) * 32, 32);
     recount_ticks();
   }
-  void put(RecType t, uint32_t day, uint32_t oid, int cls, int seat, int arm,
-           int a = 0, int b = 0, float margin = 0.f, float value = 0.f, int band = 0, int flags = 0,
-           int via = 0, int prov = PROV_D) {
+  static Rec make(RecType t, uint32_t day, uint32_t oid, int cls, int seat, int arm,
+                  int a = 0, int b = 0, float margin = 0.f, float value = 0.f, int band = 0, int flags = 0,
+                  int via = 0, int prov = PROV_D) {
     Rec r{}; r.type = (uint16_t)t; r.cls = (uint16_t)cls; r.day = day; r.oid = oid; r.seat = seat;
     r.a = a; r.b = b; r.margin = margin; r.value = value; r.arm = (uint8_t)arm; r.band = (uint8_t)band; r.flags = (uint8_t)flags;
     r.via = (uint8_t)via; r.firm = 0; r.prov = (uint8_t)prov; r.ver = REC_VER;
+    return r;
+  }
+  void put(RecType t, uint32_t day, uint32_t oid, int cls, int seat, int arm,
+           int a = 0, int b = 0, float margin = 0.f, float value = 0.f, int band = 0, int flags = 0,
+           int via = 0, int prov = PROV_D) {
     if (t == R_NOTE) ++notes_since_tick;
-    append(r);
+    append(make(t, day, oid, cls, seat, arm, a, b, margin, value, band, flags, via, prov));
   }
   // The first row of every tape: the mode, the switch and the schema pin. A fold
   // that must refuse a mismatched tape can do so before it opens a sidecar.
@@ -284,9 +289,11 @@ struct Tape {
   // The clock is a row. b counts the rows of the period that just closed. A
   // NOTE is a row of no period (D1: a restore writes one between periods), so
   // it is not counted.
-  void tick(uint32_t day) {
+  // D3: value = wall seconds since the last tick, the operator's number and never
+  // the machine's; the sim writes 0 and the dynamic O25 varies it.
+  void tick(uint32_t day, float wall_seconds = 0.f) {
     const size_t since = rec.size() - last_tick_at - notes_since_tick;
-    put(R_TICK, day, 0, 0, -3, ARM_GOVERNOR, (int)day, (int)since);
+    put(R_TICK, day, 0, 0, -3, ARM_GOVERNOR, (int)day, (int)since, 0.f, wall_seconds);
     last_tick_at = rec.size(); notes_since_tick = 0;
   }
   size_t last_tick_at = 0, notes_since_tick = 0;

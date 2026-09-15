@@ -70,6 +70,10 @@ struct Obligation {
   int32_t  hold_seat = -1;      // the seat that holds it
   uint8_t  mhold_reason = 0;    // the resident's hold in force: RS_* + 1, 0 none
   uint8_t  mhold_band = 0;
+  // D2: THE SHADOW VERDICT IN FORCE. Under `shadow` the hand writes the flagged
+  // EFFECT when (via, choice, band) changes, not per period; a person's decision
+  // or an effect ends it. 0 = none; else 1 + (via | choice << 3 | band << 4).
+  uint8_t  shadow_key = 0;
 };
 
 // Memory decays. A case you last touched nine days ago costs you re-acquisition,
@@ -219,6 +223,7 @@ struct Ledger {
         return;
       }
       case R_ESCALATE: {
+        if (r.flags & RF_SHADOW) return;                    // D2: shadow: nothing moves
         Obligation* o = at_oid(r.oid); if (!o) return;
         o->state = OB_ESCALATED;
         if (r.seat >= 0) {            // a person handed it up: the receiver starts cold
@@ -232,7 +237,7 @@ struct Ledger {
         Obligation* o = at_oid(r.oid); if (!o) return;
         o->decision = r.a; o->hops = (uint8_t)r.b; o->margin = r.margin; o->band = r.band;
         o->state = OB_DECIDED; o->day_decided = r.day; o->by_machine = 0; o->via = 0; o->seat = r.seat;
-        o->last_touch = r.day; o->hold_reason = 0; o->hold_seat = -1;
+        o->last_touch = r.day; o->hold_reason = 0; o->hold_seat = -1; o->shadow_key = 0;
         return;
       }
       case R_PROPOSAL: {
@@ -248,7 +253,11 @@ struct Ledger {
         stratum_kind[r.oid] = (uint8_t)r.a; stratum_day[r.oid] = r.day + 1; stratum_rate[r.oid] = (float)r.b * 1e-6f; stratum_audit[r.oid] = r.value;
         return;
       }
+      case R_NOTE: { if (r.a == 2) sw = r.b; return; }     // D2: the switch moved (the world port wrote it); other notes move nothing
       case R_EFFECT: {
+        if (r.flags & RF_SHADOW) {                          // D2: a shadow effect is a record of what would have happened; the cell stands
+          if (Obligation* o = at_oid(r.oid)) o->shadow_key = (uint8_t)(1 + ((r.via & 7) | ((r.a & 1) << 3) | ((r.band & 3) << 4)));
+          return; }
         Obligation* o = at_oid(r.oid); if (!o) return;
         o->decision = r.a; o->state = OB_DECIDED; o->day_decided = r.day; o->by_machine = 1;
         o->via = r.via; o->band = r.band; o->margin = r.margin;
@@ -268,7 +277,7 @@ struct Ledger {
         o->outcome = (uint8_t)r.a; o->state = OB_SETTLED; o->day_settled = r.day;
         return;
       }
-      default: return;   // LICENSE, KAPPA, PATCH, COUNSEL, RECEIPT, CORRECTION, NOTE: no ledger effect here
+      default: return;   // LICENSE, KAPPA, PATCH, COUNSEL, RECEIPT, CORRECTION: no ledger effect here
     }
   }
 
@@ -324,6 +333,7 @@ inline FoldDiff ledger_diff(const Ledger& L, const Ledger& w) {
     if (a.dep != b.dep) miss("dep", i);
     if (a.hold_reason != b.hold_reason || a.hold_seat != b.hold_seat) miss("hold in force", i);
     if (a.mhold_reason != b.mhold_reason || a.mhold_band != b.mhold_band) miss("machine hold in force", i);
+    if (a.shadow_key != b.shadow_key) miss("shadow verdict in force", i);
   }
   if (L.open_idx != w.open_idx) miss("open_idx", 0);
   if (L.next_id != w.next_id) miss("next_id", 0);
@@ -349,8 +359,8 @@ inline FoldDiff ledger_diff(const Ledger& L, const Ledger& w) {
 
 // D0: the clock is a row the machine folds. The world port appends TICK and the
 // ledger's day moves with it; the machine reads its day from the ledger only.
-inline void tick_fold(Tape& tape, Ledger& L, uint32_t day) {
-  tape.tick(day);
+inline void tick_fold(Tape& tape, Ledger& L, uint32_t day, float wall_seconds = 0.f) {
+  tape.tick(day, wall_seconds);
   L.apply(tape.rec.back());
 }
 

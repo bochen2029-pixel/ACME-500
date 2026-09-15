@@ -31,7 +31,9 @@
 #include "governor.h"
 #include "world.h"
 #include "tapefile.h"
+#include "gate.h"
 #include <cstdio>
+#include <ctime>
 #include <string>
 
 namespace acme {
@@ -212,15 +214,35 @@ inline CkptInfo ckpt_find_and_read(const std::string& dir, uint32_t max_day, siz
 
 // The tape's sidecar: pins, hashes, rows, head, cursor. Rewritten by rename.
 inline bool tape_meta_write(const std::string& dir, const char* mode, uint32_t judge_hash, uint32_t frontier_hash,
-                            size_t rows, const uint8_t head[32], uint64_t cursor, int n, int span, uint64_t seed, float demand, int days, int warm) {
+                            size_t rows, const uint8_t head[32], uint64_t cursor, int n, int span, uint64_t seed, float demand, int days, int warm,
+                            const char* gate_hash = "unknown", const char* sw = "live") {
   FILE* m = std::fopen((dir + "/tape.meta.json.tmp").c_str(), "wb"); if (!m) return false;
   std::fprintf(m, "{\"format\":\"acme-500 durable tape v2\",\"rec_bytes\":%zu,\"rec_ver\":%d,\"seg_rows\":%d,\"alphabet_hash\":%u,\"schema_hash\":%u,"
-                  "\"mode\":\"%s\",\"judge_hash\":%u,\"frontier_hash\":%u,\"rows\":%zu,\"chain_head\":\"%s\",\"cursor\":%llu,"
+                  "\"mode\":\"%s\",\"switch\":\"%s\",\"gate_hash\":\"%s\",\"judge_hash\":%u,\"frontier_hash\":%u,\"rows\":%zu,\"chain_head\":\"%s\",\"cursor\":%llu,"
                   "\"args\":{\"n\":%d,\"span\":%d,\"seed\":%llu,\"demand\":%.4g,\"days\":%d,\"warm\":%d}}\n",
-               sizeof(Rec), REC_VER, (int)SEG_ROWS, alphabet_hash(), schema_hash(), mode, judge_hash, frontier_hash, rows,
+               sizeof(Rec), REC_VER, (int)SEG_ROWS, alphabet_hash(), schema_hash(), mode, sw, gate_hash, judge_hash, frontier_hash, rows,
                Blake2b::hex(head, 32).c_str(), (unsigned long long)cursor, n, span, (unsigned long long)seed, demand, days, warm);
   std::fclose(m);
   return atomic_rename(dir + "/tape.meta.json.tmp", dir + "/tape.meta.json");
+}
+
+// D2: THE PILL. The world port writes the heartbeat at the close of every
+// period, by rename; tools/pill.py reads it. The machine cannot write it.
+inline bool pill_write(const std::string& path, uint32_t day, size_t rows, const uint8_t head[32], int sw, uint32_t judge_hash, double wall) {
+  FILE* m = std::fopen((path + ".tmp").c_str(), "wb"); if (!m) return false;
+  std::fprintf(m, "{\"day\":%u,\"rows\":%zu,\"chain_head\":\"%s\",\"switch\":\"%s\",\"judge\":%u,\"wall\":%.3f}\n",
+               day, rows, Blake2b::hex(head, 32).c_str(), switch_name(sw), judge_hash, wall);
+  std::fclose(m);
+  return atomic_rename(path + ".tmp", path);
+}
+// D2: THE SWITCH FILE. Read by the port, never by the machine; a change is a
+// NOTE row the ledger folds. Returns -1 if the file is absent or unreadable.
+inline int switch_file_read(const std::string& path) {
+  FILE* f = std::fopen(path.c_str(), "rb"); if (!f) return -1;
+  char buf[32] = {0}; const size_t n = std::fread(buf, 1, sizeof buf - 1, f); std::fclose(f);
+  size_t k = 0; while (k < n && (buf[k] == ' ' || buf[k] == '\n' || buf[k] == '\r' || buf[k] == '\t')) ++k;
+  size_t e = k; while (e < n && buf[e] > ' ') ++e; buf[e] = 0;
+  return switch_parse(buf + k);
 }
 
 } // namespace acme

@@ -2,7 +2,7 @@
 
 **A virtual enterprise of 500 knowledge workers, and its automation, in one C++17 binary with no dependencies. It exists so that a method for automating organizations can be graded by a world that answers in seconds instead of quarters, and can fail cheaply before any real firm is asked to be the grader.**
 
-5,561 lines on branch `v2` (v1 is tag `v1-step-A`). Five modes. Twenty-three oracles in the binary and three on the source tree, each carrying a lie that it must be seen to catch. Every number it prints is a reading, and the readings that turned out wrong are printed as retractions in the receipts.
+5,832 lines on branch `v2` (v1 is tag `v1-step-A`). Five modes. Twenty-six oracles in the binary and four on the source tree, each carrying a lie that it must be seen to catch. Every number it prints is a reading, and the readings that turned out wrong are printed as retractions in the receipts.
 
 ```
 g++ -O2 -std=c++17 -Iinclude -Wall -Wextra -ffp-contract=off src/main.cpp -o acme
@@ -39,7 +39,7 @@ It is a falsifier first, a gym second, and a demonstrator last. **It tests the i
 | [step B](receipts/RECEIPT_ACME500_STEP-B_2026-09-14.md) and its remediation | the record is v2 (40 bytes, `via`, `arm` = the decider); the rows the fold was missing; `ledger.h` folds the tape into every cell and the minute meter; O14 fold-to-identity, O15 the ladder is a fold, O25a no clock in the kernel, O29 row shape; the alphabet pin; 20 of 20 with eighteen lie arms; every reading identical |
 | [step C0](receipts/RECEIPT_ACME500_STEP-C0_2026-09-14.md) | every consumer reads the folded ledger; the port (`Store::frame`, `Judge::read`) with the plant behind it; O17, the machine links without the plant; the prints that attribute (minutes by via, the binding reason per band, the frame split, the row histogram); every reading identical; F21 found and recorded |
 | [step C1](receipts/RECEIPT_ACME500_STEP-C1_2026-09-14.md) | the judge on its own key with its own competence (F16); the kernel's completeness from the compile step; the planted half of the class table out of the kernel's reach (`planted(c)`, `build_acme` in the plant, the cascade fitted from a handed panel, kappa's denominator metered from rows); the read budget with the memo keyed on the frame; the governor in its own translation unit writing STRATUM, LICENSE and KAPPA rows; the licence keyed to the judge; O16, O21, O17 with a second lie; 22 of 22 with twenty lie arms; the first step to move a number, every delta named; F22 found and fixed |
-| [step D](receipts/RECEIPT_ACME500_STEP-D_2026-09-14.md), in progress | D0: holds and strata as rows on change (the sim's tape 5.67M → 1.61M rows), the TICK-driven loop; D1: the durable tape in segments with the chain head in each header, the checkpoint with its meta written last, `--resume` from the newest valid one, `--dump` on the observer's contract, O18 with its lie and a real SIGKILL survived; the path-length and frontier-bill prints; 23 of 23 with twenty-one lie arms; every reading identical to C1 |
+| [step D](receipts/RECEIPT_ACME500_STEP-D_2026-09-14.md) | D0: holds and strata as rows on change (the sim's tape 5.67M → 1.61M rows), the TICK-driven loop; D1: the durable tape in segments with the chain head in each header, the checkpoint with its meta written last, `--resume` from the newest valid one, `--dump` on the observer's contract, O18 with its lie and a real SIGKILL survived; D2: the switch `off/shadow/live/stop` from a file the machine never writes, the pill, the gate as a hashed library (O30a), every EFFECT re-derived from rows (O30), off invisible (O19), shadow agreement 87.2%; D3: the dynamic O25; 26 of 26 with twenty-four lie arms; every reading identical to C1 under `live` |
 
 The readings as they stand after step C1, synthetic firm, one writ, 500 seats, demand 1.5 (the C1 receipt names what moved from v1 and why):
 
@@ -61,9 +61,9 @@ Four findings are recorded and not fixed: the novelty score has no variance once
 | `--twin [--days 260]` | both arms on one seeded world with nothing shared: the exact paired counterfactual, and the bias a within-firm canary would have reported | 49 s |
 | `--automate [--warm 180 --days 260]` | the whole programme: instrument the boundary, compile from the query log, replay the history, license the agreement bands, canary everything at the floor, climb on arrivals, kappa, the cascade, the residual, the counter on the wall | 47 s |
 | `--multiverse [--futures 64]` | policy search over structure: many ACMEs under edited constraints, writ-reweighted with ensemble pessimism; every patch carries an inverse | 35 min |
-| `--selftest [--lie N]` | the oracle battery; `--lie N` corrupts the mechanism oracle N tests and that oracle must be seen to catch it | 22 s |
+| `--selftest [--lie N]` | the oracle battery; `--lie N` corrupts the mechanism oracle N tests and that oracle must be seen to catch it | 80 s |
 
-Common flags: `--n 500 --span 7 --demand 1.5 --seed 20260913`; `--budget N` the read budget; `--judge plant|null|rules`; `--tape DIR` writes the durable tape with a checkpoint every `--ckpt-every K` periods, `--resume` continues from its newest valid checkpoint, `--dump DIR` writes the observer's files.
+Common flags: `--n 500 --span 7 --demand 1.5 --seed 20260913`; `--budget N` the read budget; `--judge plant|null|rules`; `--tape DIR` writes the durable tape with a checkpoint every `--ckpt-every K` periods, `--resume` continues from its newest valid checkpoint, `--dump DIR` writes the observer's files; `--switch off|shadow|live|stop` and `--switch-file PATH` (read by the port every period, a change is a NOTE row), `--pill PATH` the heartbeat `tools/pill.py` reads.
 
 ## The oracle battery
 
@@ -82,7 +82,10 @@ Every oracle carries a lie. Under `--lie N` the mechanism oracle N claims to tes
 | O16 | a null judge and a rules judge license nothing, from history or the wager | PASS, null judge: top rung 0, 0 LICENSE rows, 0 wager outcomes; rules judge: top rung 0, 0 rows, 0 outcomes |
 | O21 | the canary draw is independent of the machine's band | PASS, chi-square 72.2 on 72 class-band cells against a 99.9% point of 114.9 |
 | O18 | a kill survives: the durable tape reopens, the checkpoint restores, the run continues bit for bit | PASS, cut at row 352711 + 17 bytes with checkpoint 59 in flight; restored at day 49, 60069 rows dropped; continued run: 402661 rows, chain verified, 0 fold diffs, rows equal the unkilled run's |
-| O2 | the gate never authorises outside its licence | PASS, 8640 lattice points, 390 reached ACT |
+| O30 | every EFFECT re-derives from rows: proposal, stratum, folded rung, schema, switch, the gate's own inputs | PASS, 48000 effects re-derived through the gate: 48000 agree, 0 mismatched, 0 band mismatches, 0 without a proposal |
+| O19 | off is invisible: no effect, and the incumbent's rows equal a run with no machine | PASS, 0 effects under off; 288051 incumbent rows against 288051 with no machine, byte-identical |
+| O25 | the same rows at different wall spacing give identical verdicts: the machine reads the day, never the clock | PASS, 402660 rows against 402660; 70 TICK rows carry a different wall value; every other byte identical |
+| O2 | the gate never authorises outside its licence | PASS, 8640 lattice points, 390 reached ACT; pressure never widened; off held every point |
 | O3 | out of supervision degrades to HOLD, never to acting | PASS |
 | O4 | transport conserves: rows ship, columns never exceed | PASS, max column overshoot 0.00e+00, placed+stock err 1.30e-08 |
 | O5 | a binding capacity has a nonzero price, stocks included | PASS, binding seat price 29.6598, unplaced-stock price 28.0206 |
@@ -95,10 +98,11 @@ Every oracle carries a lie. Under `--lie N` the mechanism oracle N claims to tes
 | O12 | the origin-fit cascade promises an impossible company | PASS, alpha 0.145 vs 0.197 planted; F 17.6 vs 9.0; gap at E=200 is 9 seats |
 | O13 | the measured decide fraction ranks the planted intensity | PASS, partial Spearman 0.963 over 24 classes, n_systems controlled; the LEVEL is never recovered |
 | O28 | no dead physics: every free function in firm.h/world.h has a caller | PASS, 18 functions |
-| O25a | the kernel reads no clock: machine.h, solver.h, ledger.h, report.h, port.h, license.h, tapefile.h read time only from TICK rows | PASS |
+| O25a | the kernel reads no clock: machine.h, solver.h, ledger.h, report.h, port.h, license.h, tapefile.h, gate.h read time only from TICK rows | PASS |
 | O17 | the machine links without the plant or the governor: ledger.h, port.h, license.h, solver.h, machine.h, report.h compile under -DACME_NO_PLANT -DACME_NO_GOVERNOR | PASS |
+| O30a | the gate is pinned: include/acme/gate.h digests to its pin d1115a674638eba9 | PASS |
 
-*Regenerated from `receipts/step-d-2026-09-14/d1/selftest.txt`, `o28_o25a.txt` and `o17.txt` by `tools/oracle_table.py`, never edited by hand. O25a is a source scan (no clock read in the kernel's files); the dynamic O25 (same rows at different wall spacing give identical verdicts) waits for the TICK-driven loop of step D.*
+*Regenerated from `receipts/step-d-2026-09-14/d2/selftest.txt`, `o28_o25a.txt`, `o17.txt` and `o30a.txt` by `tools/oracle_table.py`, never edited by hand. O25a is a source scan (no clock read in the kernel's files); the dynamic O25 (same rows at different wall spacing give identical verdicts) waits for the TICK-driven loop of step D.*
 
 ## How it is built
 
@@ -155,6 +159,9 @@ include/acme/firm.h       the cone from the span, the α/E split, skills, the wr
 include/acme/ledger.h     THE LEDGER: the cells, the open set and the minute meter, as a fold of the tape; includes nothing from the plant
 include/acme/port.h       THE PORT: Store::frame and Judge::read, the only way the machine touches a world
 include/acme/license.h    THE LICENCE TABLE: per class-band, keyed per judge; the gate reads it, the governor writes it
+include/acme/gate.h       THE GATE, a hashed library: the verdicts, the reasons, the alphabet pin, the switch; its pin in gate_hash.inc (O30a)
+include/acme/tapefile.h   THE DURABLE TAPE: segments with the chain head in each header, the torn tail, the sink
+include/acme/checkpoint.h the checkpoint with its meta written last, the tape's meta, the pill, the switch file
 include/acme/governor.h   THE GOVERNOR: the salt, the strata as rows, the ladder as LICENSE and KAPPA rows; the machine never includes it
 include/acme/world.h      THE PLANT: the planted half of the class table, build_acme, determinants and where they live, arrivals, the read, the grader; PlantStore, PlantJudge
 include/acme/human.h      the incumbent arm: the five acts, the glue, the derived meeting calendar, escalation

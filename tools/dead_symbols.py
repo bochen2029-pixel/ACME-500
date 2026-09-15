@@ -17,7 +17,7 @@ import os, re, shutil, sys, tempfile
 PHYSICS = ["include/acme/firm.h", "include/acme/world.h"]
 SOURCES = ["include/acme/core.h", "include/acme/firm.h", "include/acme/world.h", "include/acme/human.h",
            "include/acme/ledger.h", "include/acme/port.h", "include/acme/license.h", "include/acme/governor.h",
-           "include/acme/tapefile.h", "include/acme/checkpoint.h", "include/acme/dump.h",
+           "include/acme/tapefile.h", "include/acme/checkpoint.h", "include/acme/dump.h", "include/acme/gate.h", "tools/gate_hash.py", "tools/pill.py",
            "include/acme/solver.h", "include/acme/machine.h", "include/acme/report.h", "src/main.cpp",
            "tools/o17_machine_tu.cpp"]
 # a free function definition at column 0: `inline T name(` or `static T name(` (house style)
@@ -57,7 +57,7 @@ def dead(root):
 
 
 KERNEL = ["include/acme/machine.h", "include/acme/solver.h", "include/acme/ledger.h", "include/acme/report.h",
-          "include/acme/port.h", "include/acme/license.h", "include/acme/tapefile.h"]
+          "include/acme/port.h", "include/acme/license.h", "include/acme/tapefile.h", "include/acme/gate.h"]
 CLOCK = re.compile(r"\bchrono\b|\btime\s*\(|\bclock\s*\(|\bgetenv\s*\(|\bclock_gettime\b|\bgettimeofday\b")
 
 
@@ -94,7 +94,7 @@ def o25(root, lie):
         return 0 if ok else 1
     hits = clock_reads(root)
     if not hits:
-        print(f"  [PASS] O25a the kernel reads no clock: machine.h, solver.h, ledger.h, report.h, port.h, license.h, tapefile.h read time only from TICK rows")
+        print(f"  [PASS] O25a the kernel reads no clock: machine.h, solver.h, ledger.h, report.h, port.h, license.h, tapefile.h, gate.h read time only from TICK rows")
         return 0
     print(f"  [FAIL] O25a the kernel reads no clock: {len(hits)} clock or environment reads: " + ", ".join(hits))
     return 1

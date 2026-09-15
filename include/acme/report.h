@@ -404,6 +404,25 @@ inline void print_frontier_bill(const Tape& tape, int NC) {
   }
 }
 
+// SHADOW AGREEMENT (D2). Under `shadow` the hand writes every EFFECT flagged
+// and moves nothing; the person then decides the same cell. Per class: how
+// often the machine's draft and the person's decision agreed. Prints nothing
+// when the tape carries no shadow effect.
+inline void print_shadow_agreement(const Tape& tape, int NC) {
+  std::vector<long> n(NC, 0), agree(NC, 0); std::vector<int> last; long shadows = 0;
+  tape.fold([&](const Rec& r) {
+    if (r.oid == 0 || r.cls >= NC) return;
+    if (r.oid >= last.size()) last.resize((size_t)r.oid + 1024, -1);
+    if (r.type == R_EFFECT && (r.flags & RF_SHADOW)) { last[r.oid] = r.a; ++shadows; return; }
+    if (r.type == R_DECIDE && last[r.oid] >= 0) { ++n[r.cls]; if (last[r.oid] == r.a) ++agree[r.cls]; last[r.oid] = -1; }
+  });
+  if (!shadows) return;
+  long tn = 0, ta = 0; for (int c = 0; c < NC; ++c) { tn += n[c]; ta += agree[c]; }
+  std::printf("\n  SHADOW AGREEMENT — %ld shadow effects; on %ld cells a person then decided, the draft agreed %.1f%%\n", shadows, tn, tn ? 100.0 * ta / tn : 0.0);
+  std::printf("  %-22s %8s %8s\n", "class", "compared", "agree");
+  for (int c = 0; c < NC; ++c) if (n[c]) std::printf("  %-22s %8ld %7.1f%%\n", cls_spec(c).name, n[c], 100.0 * agree[c] / n[c]);
+}
+
 // THE ROW HISTOGRAM. Rows by type, from which the write share S of §1 becomes
 // computable on writes rather than on minutes.
 inline void print_row_histogram(const Tape& tape) {

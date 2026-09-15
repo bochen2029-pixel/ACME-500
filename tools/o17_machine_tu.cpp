@@ -10,6 +10,7 @@
 #include "acme/ledger.h"
 #include "acme/port.h"
 #include "acme/license.h"
+#include "acme/gate.h"      // D2: the gate is its own header
 #include "acme/solver.h"
 #include "acme/machine.h"
 #include "acme/report.h"
@@ -39,6 +40,7 @@ int acme_o17_instantiate() {
   Resident r; r.init(L.NC, f.size(), C, f.writ, 1);
   Ladder lic; lic.init(L.NC, alphabet_hash(), 0x4E554C4Cu);
   NullStore store; NullJudge judge, frontier;
+  L.sw = SW_LIVE;
   r.period(L, f, t, store, judge, frontier, lic);
   r.grade(L, judge, frontier);
   const ReplayOut rp = replay(L, f, r.fd, C, lic, f.writ, store, judge);

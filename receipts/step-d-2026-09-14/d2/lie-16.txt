@@ -1,0 +1,34 @@
+
+=== THE ORACLE BATTERY ================================================
+  --lie 16 : oracle 16 is running against a deliberately corrupted mechanism.
+            Its line prints PASS only if it CAUGHT the corruption; a FAIL there is a
+            broken oracle. A healthy lie run therefore exits 0, like the plain battery.
+
+  [PASS] O0a  BLAKE2b-256("abc") matches RFC 7693             
+  [PASS] O0b  tape chain verifies over 500 rows               
+  [PASS] O0c  a single flipped field localises to its row     (localised at row -1)
+  [PASS] O1   same seed produces a byte-identical tape        (168479 rows, memcmp)
+  [PASS] O1b  same seed produces a byte-identical MACHINE arm: tape, chain, licence table (402660 rows; rec same, chain same, licence table same)
+  [PASS] O14  the ledger folds from the tape: cold fold == the live ledger every consumer reads (58367 cells folded from 402660 rows; 0 field diffs; 0 minute diffs; alphabet pin matches)
+  [PASS] O29  every row carries what the v2 table says it carries (402660 rows scanned, 0 shape faults)
+  [PASS] O15  the ladder is a fold of OUTCOME rows: counts rebuilt == live (72 class-bands; 1 count diffs against the live ladder)
+  [PASS] O16  a null judge and a rules judge license nothing, from history or the wager (null judge: top rung 0, 0 LICENSE rows, 0 wager outcomes; rules judge: top rung 0, 0 rows, 0 outcomes)
+  [PASS] O21  the canary draw is independent of the machine's band (chi-square 72.2 on 72 class-band cells against a 99.9% point of 114.9)
+  [PASS] O18  a kill survives: the durable tape reopens, the checkpoint restores, the run continues bit for bit (cut at row 352711 + 17 bytes with checkpoint 59 in flight; restored at day 49, 60069 rows dropped; continued run: 402661 rows, chain verified, 0 fold diffs, rows equal the unkilled run's)
+  [PASS] O30  every EFFECT re-derives from rows: proposal, stratum, folded rung, schema, switch, the gate's own inputs (48000 effects re-derived through the gate: 48000 agree, 0 mismatched, 0 band mismatches, 0 without a proposal)
+  [PASS] O19  off is invisible: no effect, and the incumbent's rows equal a run with no machine (0 effects under off; 288051 incumbent rows against 288051 with no machine, byte-identical)
+  [PASS] O25  the same rows at different wall spacing give identical verdicts: the machine reads the day, never the clock (402660 rows against 402660; 70 TICK rows carry a different wall value; every other byte identical)
+  [PASS] O2   the gate never authorises outside its licence   (8640 lattice points, 390 reached ACT; pressure never widened; off held every point)
+  [PASS] O3   out of supervision degrades to HOLD, never to acting 
+  [PASS] O4   transport conserves: rows ship, columns never exceed (max column overshoot 0.00e+00, placed+stock err 1.30e-08)
+  [PASS] O5   a binding capacity has a nonzero price, stocks included (binding seat price 29.6598, unplaced-stock price 28.0206)
+  [PASS] O6   the join graph is read off the application, not asked for (24 of 24 classes, exactly)
+  [PASS] O7   coverage read off the world's verdicts tracks the tacit mass (mean |err| 0.054, corr 0.946 over 19 classes)
+  [PASS] O8   the disagree/firm-failed cell licenses nothing  (2174 cells available, 21611 credited, 21611 agreements)
+  [PASS] O9   the field recovers competence no human in ACME can see (mean within-class corr 0.242 over 9 classes, 209 seat-class pairs)
+  [PASS] O10  kappa demotes a class that costs more than it saves (kappa 2.25 -> rung 1)
+  [PASS] O11  effects carry inverses; the window closes at settlement (60 effects committed and unwound; post-settlement reversal refused)
+  [PASS] O12  the origin-fit cascade promises an impossible company (alpha 0.145 vs 0.197 planted; F 17.6 vs 9.0; gap at E=200 is 9 seats)
+  [PASS] O13  the measured decide fraction ranks the planted intensity (partial Spearman 0.963 over 24 classes, n_systems controlled; the LEVEL is never recovered)
+
+  26 passed, 0 failed   (with oracle 16 lied to: PASS on its line means the lie was caught; FAIL there means it was not)

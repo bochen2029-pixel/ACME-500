@@ -1,0 +1,242 @@
+
+=== PHASE 0-1 · INSTRUMENT THE BOUNDARY, THEN WATCH ==================
+  Change data capture off the systems of record into one hash-chained tape:
+  events in, effects out, outcomes when they land. NEVER the interior. The
+  meeting, the deck and the ticket are not instrumented, because the label
+  was always the arrival and never what a person selected.
+  switch shadow; the gate is pinned at d1115a674638eba9 (tools/gate_hash.py, O30a).
+
+=== PHASE 2 · COMPILE, FROM THE APPLICATION ==========================
+  24 classes seen. The join graph is recovered from the query log — which
+  systems each screen actually opened — not from asking anybody.
+
+  class                   sys^   sys    cover^    cover   decide-fraction (measured)
+  quote.price                4     4     0.965    1.000   0.321
+  invoice.issue              2     2     0.989    1.000   0.278
+  claim.coverage.det         5     5     0.947    0.925   0.350
+  po.match.3way              3     3     0.965    0.907   0.243
+  req.approve                3     3     0.955    0.895   0.378
+  recon.break.clear          4     4     0.949    0.900   0.301
+  join graph recovered exactly on 24 of 24 classes.
+  invariants: 51 predicates proposed, 27 held with ZERO violations over the
+  history and become -inf masks before normalisation. The rest are soft terms.
+
+=== PHASE 3 · REPLAY — THE FAST GRADER, ON ITS OWN SUPPORT =========
+  re-decided 65773 settled obligations in 27 ms. The four-cell table:
+
+                                          firm good   firm bad
+      resident agreed                         32788      25935   <- GRADED. identical action, the world's own verdict
+      resident disagreed                       2008       5042   <- NOT GRADED, either cell.
+
+  The fourth cell is the tempting one and this program refuses it: the firm's
+  choice failed, but the resident's alternative was never executed, so it says
+  nothing about whether the resident would have done better. It is a reason to
+  instrument, not a reason to license.
+
+  agreement-band mass 89.3%.  Coverage is NOT read off agreement: two readers with
+  the same blind spot agree across it. It is read off the world: where both chose the
+  same action and the world said WRONG (2407 of 58723 agreed), both missed the determinant
+  that decided the case, and only an unrecorded one can be missed by both.
+  estimated mean coverage 0.909 against a planted truth of 0.889 (error +0.020).
+  32 class-bands licensed to rung 1 by history alone, in the time that replay took.
+  the licence table is keyed to judge 0x504c4a32 under schema pin 0x2dc5517b; a judge with another hash reads rung 0.
+
+=== PHASE 4 · THE LADDER — CLIMBING ON ARRIVALS ONLY ===============
+  n_act is the WAGER (unattended acts, the only outcomes that widen a licence);
+  n_asst is drafts a person keyed and warrants a signer executed, graded but never fed.
+  good_h is the firm's own rate in the SAME band, which the e-process is paired against.
+
+  class                  band   rung  n_act n_asst    n0    good_a  good_s  good_h  kappa  state
+  quote.price               2      5    665   1112  1077     0.913   0.488   0.160   0.39  history-admitted
+  collections.chase         2      5    557    613   557     0.944   0.486   0.222   0.64  history-admitted
+  claim.settle.auth         2      1      0   3001   791     0.000   0.198   0.000   0.03  history-admitted
+  spend.approve             2      5    264   2194  1306     0.667   0.324   0.170   0.35  history-admitted
+  recon.break.clear         2      5    772   2241   791     0.896   0.216   0.180   0.10  history-admitted
+
+  29 class-bands past rung 0.  26 bands are UNLICENSABLE at any tolerable canary
+  rate: n0 is not a constant, it is n0(p, delta), so the rarest-failure classes
+  are the SLOWEST to license. The honest account prints them as human rather
+  than holding them in shadow forever.
+
+  THE BINDING REASON PER BAND at day 259: the first thing in the ladder's own order that
+  keeps each class-band from one rung wider, and what moves it
+
+  reason        band0  band1  band2    all   the lever
+  at-top            0      0     11     11   rung 5; nothing binds
+  thin-band        24      0      0     24   the thin band: drafted or rented at every rung, never a wager; nothing on the ladder applies
+  no-history        0     12      4     16   never admitted: the determinant the human read and the machine did not
+  n_machine         0     12      7     19   fewer wager outcomes than the floor: volume, the canary rate
+  logE              0      0      2      2   outcomes past the floor, the e-process below 1/alpha: the world's answer
+
+  class                  binding 0/1/2 (*: n0 unreachable)  rung 0/1/2  n_act 0/1/2        n0
+  quote.price            thin-band/n_machine/at-top         0/1/5       0/329/665          1077
+  quote.approve.disc     thin-band/no-history*/at-top*      0/0/5       0/0/249            1306
+  order.credit.check     thin-band/no-history*/n_machine*   0/0/0       0/0/187            1650
+  order.fulfil.sched     thin-band/n_machine/at-top         0/1/5       0/629/1403         695
+  invoice.issue          thin-band/n_machine*/n_machine*    0/0/0       0/197/290          3368
+  collections.chase      thin-band/n_machine/at-top         0/1/5       0/246/557          557
+  dispute.resolve        thin-band/no-history*/at-top*      0/0/5       0/0/156            314
+  claim.intake.triage    thin-band/n_machine/at-top         0/1/5       0/454/1724         914
+  claim.coverage.det     thin-band/n_machine/at-top         0/1/5       0/290/627          695
+  claim.reserve.set      thin-band/n_machine/logE           0/1/1       0/189/314          460
+  claim.settle.auth      thin-band/no-history/n_machine     0/0/1       0/0/0              791
+  claim.fraud.refer      thin-band/no-history*/no-history*  0/0/0       0/0/0              259
+  po.match.3way          thin-band/n_machine/at-top         0/1/5       0/311/698          2223
+  vendor.onboard         thin-band/no-history*/n_machine*   0/0/1       0/0/5              619
+  contract.renew         thin-band/no-history*/no-history*  0/0/0       0/0/0              504
+  spend.approve          thin-band/no-history*/at-top*      0/0/5       0/0/264            1306
+  req.approve            thin-band/no-history*/logE*        0/0/1       0/0/61             423
+  candidate.screen       thin-band/n_machine/at-top         0/1/5       0/110/89           361
+  leave.approve          thin-band/no-history*/n_machine*   0/0/1       0/0/124            3368
+  accrual.post           thin-band/n_machine*/n_machine*    0/1/1       0/104/175          1650
+  recon.break.clear      thin-band/n_machine/at-top         0/1/5       0/230/772          791
+  forecast.adjust        thin-band/no-history/no-history    0/0/0       0/0/0              244
+  kyc.review             thin-band/n_machine*/n_machine*    0/1/1       0/15/9             1077
+  reg.filing.prepare     thin-band/no-history*/no-history*  0/0/0       0/0/0              1306
+
+  * 26 of 48 bands past the thin band have n0 unreachable inside a term at any tolerable canary
+    rate (F14); the ladder never reads that label.  8 bands sit at rung 5 with fewer wager
+    outcomes than n0: the floor is checked against cumulative n_machine, so it is paid once and
+    not per rung, and on a history-admitted band 2 it is n0/8 (F21, recorded and not fixed here).
+
+=== PHASE 5 · WHAT THE RESIDENT DID ==================================
+  acted unattended 15693   drafted for a person 165881   rented a frontier mind 77724
+  sent to a warrant seat 81885   held (a row, with its margin) 122840
+  canary instances 1363   audit sample 63013   effects undone 0
+
+  the gate's refusal reasons, which are the only vocabulary it has:
+    ok                             2903
+    unlicensed                   125719
+    irreversible                  21119
+    no-adjudication-budget        79904
+    blocked-by-dep                 9158
+    audit-sample                  78177
+    canary                         1363
+    unsure-placement              77724
+    unread                        33778
+
+  THE READ BUDGET — 50000 Judge::read calls a period, the memo keyed on the frame:
+    reads 1785 a period (1688 fresh, 97 floor re-reads)   carried forward from the memo 3166 a period
+    held as UNREAD 422 a period   forgone dual 6.0% of the field's own prices   (the budget bound in 1 of 80 periods)
+    frontier reads 972 a period, re-rented for the same cell each period until the counsel memo of step E (F12)
+
+  KAPPA — supervision created over supervision removed: 0.083
+  (2875k minutes of human review caused, 34775k minutes of human work removed)
+  A class whose licence costs more attention than it saves is demoted the same
+  day, regardless of how good the model looks. That is the only meter in this
+  program that can fail while every other number improves.
+
+  MINUTES BY VIA — the resident arm, warm period included: 23425 thousand human minutes, by how the cell left the building
+  thousands of minutes                  fetch    frame   decide   commit transport   rework     glue  meeting     total  share
+  a person decided (via 0)             2802.4   1441.2   2638.7   1577.0    175.0     47.9      0.0      0.0    8682.2  37.1%
+  the resident acted (via 1)              7.0      4.1      7.1      0.0      4.0      0.2      0.0      0.0      22.4   0.1%
+  drafted, a person keyed (via 2)       576.9    306.5    625.8      0.0    355.7      8.7      0.0      0.0    1873.7   8.0%
+  a rented mind acted (via 3)            77.4     40.4     76.9      0.0     44.4      1.1      0.0      0.0     240.1   1.0%
+  a signer executed (via 4)             189.1     99.0    196.6      0.0    102.4      4.2      0.0      0.0     591.3   2.5%
+  never decided, open at the end          1.1      0.5      0.9      0.0      0.7      0.0      0.0      0.0       3.2   0.0%
+  no cell: glue and meetings              0.0      0.0      0.0      0.0      0.0      0.0   7944.3   4068.3   12012.6  51.3%
+  all                                  3654.0   1891.7   3545.9   1577.0    682.2     62.1   7944.3   4068.3   23425.4 100.0%
+
+  COGNITIVE PATH LENGTH — the resident arm: rows from arrival to disposition, seats passed, days; per class,
+  cells a person decided against cells the machine disposed of (means)
+
+  class                  person n   rows  seats   days   machine n   rows  seats   days
+  quote.price                7455   11.4   1.04    5.2       4997    7.4   0.44   22.8
+  quote.approve.disc          650   23.4   2.12   48.5       3808   11.0   1.27   60.2
+  order.credit.check         6063   10.2   1.04    4.9       4438    6.6   0.43   24.0
+  order.fulfil.sched         8996   12.3   1.03    5.4       6202    7.9   0.47   24.8
+  invoice.issue             10118    8.6   1.03    5.1       7113    6.5   0.39   23.2
+  collections.chase          4896   10.0   1.03    5.1       3170    7.1   0.44   24.4
+  dispute.resolve             362   30.2   2.07   49.3       1782   11.8   1.21   57.1
+  claim.intake.triage        8174   11.4   1.04   35.4      12133    5.3   0.15   35.5
+  claim.coverage.det         5381   14.7   1.04   35.8       8657    5.7   0.20   37.3
+  claim.reserve.set          1238   27.5   2.08   76.7      10119    8.4   0.76   62.5
+  claim.settle.auth            97   56.7   5.00   97.7       6914    9.3   0.84   68.2
+  claim.fraud.refer            33   52.2   3.18   91.1       1434   10.5   0.82   68.3
+  po.match.3way              7929   11.8   1.10   40.9      15260    5.0   0.11   44.8
+  vendor.onboard              387   14.6   1.12   28.4        728    6.4   0.30   37.4
+  contract.renew               86   55.0   5.00   90.6       1695   10.6   0.98   64.0
+  spend.approve              3886    9.4   1.04   23.4       5642    5.3   0.18   31.4
+  req.approve                 144   35.7   3.12   78.4       1269    8.4   0.71   65.0
+  candidate.screen           2090   12.4   1.13   39.2       4634    5.2   0.15   43.7
+  leave.approve              1823   10.0   1.08   38.9       3719    4.8   0.12   43.7
+  accrual.post               3574   11.3   1.10   33.9       5229    5.1   0.14   35.6
+  recon.break.clear          4650   12.9   1.10   34.5       7191    5.3   0.14   35.1
+  forecast.adjust             303   29.1   2.14   73.0       2326    7.4   0.53   54.4
+  kyc.review                 2260   15.1   1.19   50.4       5440    4.6   0.05   48.8
+  reg.filing.prepare           88   65.7   5.00   77.0        692   15.8   1.60   55.6
+  all                       80683   12.0   1.11   23.0     124592    6.6   0.38   41.9
+
+  THE FRONTIER BILL BY VALUE: 77248 rentals, the classes in five groups from the least to the most at stake
+  group    value at stake              rentals   share   classes
+  1        $2k to $8k                    10709   13.9%   leave.approve claim.intake.triage candidate.screen po.match.3way
+  2        $9k to $12k                   23556   30.5%   order.fulfil.sched recon.break.clear kyc.review collections.chase vendor.onboard
+  3        $15k to $20k                  23431   30.3%   order.credit.check invoice.issue accrual.post quote.price spend.approve
+  4        $22k to $55k                  18901   24.5%   claim.coverage.det quote.approve.disc dispute.resolve claim.reserve.set claim.settle.auth
+  5        $60k to $150k                   651    0.8%   forecast.adjust claim.fraud.refer contract.renew req.approve reg.filing.prepare
+
+  SHADOW AGREEMENT — 73046 shadow effects; on 668 cells a person then decided, the draft agreed 87.3%
+  class                  compared    agree
+  quote.price                  50    90.0%
+  quote.approve.disc           12    75.0%
+  order.credit.check           39    94.9%
+  order.fulfil.sched           53    96.2%
+  invoice.issue                51    96.1%
+  collections.chase            30    96.7%
+  dispute.resolve               9    88.9%
+  claim.intake.triage          81    91.4%
+  claim.coverage.det           60    78.3%
+  claim.reserve.set            16    75.0%
+  claim.settle.auth             1   100.0%
+  claim.fraud.refer             2   100.0%
+  po.match.3way                69    88.4%
+  vendor.onboard                8    75.0%
+  contract.renew                2   100.0%
+  spend.approve                45    75.6%
+  req.approve                   3    66.7%
+  candidate.screen             22    77.3%
+  leave.approve                16    81.2%
+  accrual.post                 41    82.9%
+  recon.break.clear            41    87.8%
+  forecast.adjust               4    75.0%
+  kyc.review                   12    83.3%
+  reg.filing.prepare            1   100.0%
+
+=== PHASE 6 · THE CASCADE — THE MIDDLE LEAVES BY ARITHMETIC ========
+  fitted from 7 points of the firm's own payroll against its order book:
+    with an intercept:   alpha = 0.145, F = 17.6      (planted: alpha = 0.197, F = 9.0)
+    through the origin:  alpha = 0.175, F = 0        <- the usual ratio analysis
+
+  licensed decision mass 59.2%  ->  E falls from 412 to 168
+    N with the honest fit  = 214
+    N with the naive fit   = 203   <- promises a company physics does not allow
+    the gap, 11 seats, is F: the floor a within-firm regression cannot see,
+    because the firm has never been small. You get F from cross-firm data at the
+    target size, never from the payroll you have.
+
+  and the order matters: the alpha-functions leave AFTER the E-work is licensed,
+  not before, because deleting them first breaks the people still doing the E-work.
+
+=== PHASE 7 · THE RESIDUAL — AND ONLY TWO COLUMNS MOVE =============
+  licensed          59.2%   under a rung, with an expiry, re-earning its place
+  warrant            4.6%   a signature, liability, someone who can be sued. Does not move.
+  counterparty       0.7%   the other side demands a person. Does not move.
+  frame              9.9%   uninstrumented determinants and classes that are two classes.
+     of which        6.8%   wait: a licensable band still below rung 2. Moves with time.
+                     3.1%   coverage: the uninstrumented tail of licensed classes. Moves with lane-buys.
+  thin tape         25.5%   the world answers too slowly to ever license. Moves at the
+                          world's pace, not the model's.
+
+  Two of the four do not move when models improve. That is the honest answer to
+  "why not a hundred percent", and it is a legal and instrumentation fact rather
+  than a capability one.
+
+=== THE COUNTER ON THE WALL ===========================================
+  outcomes of unattended acts received, against n0:  11473 / 77874   (the wager)
+  outcomes of drafts and warrants a person executed:  95683   (assisted; graded, never fed)
+  Everything else in this program is upstream of that number or downstream of it.
+
+  tape 2262766 rows, chain VERIFIED.  resident period 714.77 ms over 80 periods.
+  rows by type: ARRIVE 206406 ASSIGN 103744 HOLD 128634 DECIDE 80683 EFFECT 197638 ESCALATE 98885
+                OUTCOME 186979 CONTEXT 413602 MEETING 22100 TICK 260 LICENSE 79 KAPPA 216 NOTE 1
+                HEADER 1 PROPOSAL 142778 STRATUM 189609 ACT 491151

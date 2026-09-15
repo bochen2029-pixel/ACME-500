@@ -41,7 +41,10 @@ set(LIE_LINE_17 "O29")   # lie 17 = O29, row-shape conformance (an ARRIVE with n
 set(LIE_LINE_18 "O16")   # lie 18 = O16, a null judge licenses nothing (a truth-reading judge under the null's name)
 set(LIE_LINE_19 "O21")   # lie 19 = O21, the canary draw is independent of the band (a band-dependent draw)
 set(LIE_LINE_20 "O18")   # lie 20 = O18, a kill survives (a restore that keeps the period in flight)
-foreach(N RANGE 0 20)
+set(LIE_LINE_21 "O30")   # lie 21 = O30, every EFFECT re-derives from rows (an effect whose proposal was never written)
+set(LIE_LINE_22 "O19")   # lie 22 = O19, off is invisible (a resident that lets one cell through under off)
+set(LIE_LINE_23 "O25")   # lie 23 = O25, the same rows at different wall spacing (a resident that reads the clock)
+foreach(N RANGE 0 23)
   add_test(NAME lie_${N} COMMAND acme --selftest --lie ${N})
   set_tests_properties(lie_${N} PROPERTIES
     PASS_REGULAR_EXPRESSION "\\[PASS\\] ${LIE_LINE_${N}} "

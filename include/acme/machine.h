@@ -333,6 +333,9 @@ struct Resident {
   int     NC = 0, NS = 0;
   float   lr = 0.02f;
   std::vector<uint32_t> memo_hash;       // [oid] the frame hash the cell's last proposal was read under
+  bool    lie_reads_clock = false;       // O25's lie: a resident that reads the TICK row's wall value. Never set outside the battery.
+  bool    lie_effect_under_off = false;  // O19's lie: a resident that lets one cell through with the switch off. Never set outside the battery.
+  bool    lie_silent_proposal = false;   // O30's lie: a proposal folded into the memo without its row. Never set outside the battery.
 
   // C1: the resident is told the class count and the seat count, holds the
   // compile step's output and the writ (which no longer carries the salt), and
@@ -353,7 +356,13 @@ struct Resident {
 inline void Resident::period(Ledger& L, Firm& f, Tape& tape, const Store& store,
                              Judge& judge, Judge& frontier, const Ladder& lic) {
   const uint32_t day = L.day;
+  if (L.sw == SW_STOP) return;                              // D2: stop: the period returns before it reads
+  const bool shadow = (L.sw == SW_SHADOW);                  // D2: shadow: verdicts as at live, effects flagged, nothing moves
   ++st.periods;
+  // THE LIE (O25): a resident that reads the clock. The TICK row's wall value
+  // is on the tape for the operator; the machine reads the day and nothing else.
+  const int budget_now = wr.read_budget;
+  const bool clock_high = lie_reads_clock && tape.last_tick_at > 0 && tape.rec[tape.last_tick_at - 1].value > 50.f;
   // --- the adjudication budget: the humans who are still here. This is the
   // ceiling on the whole enterprise and it is deliberately small.
   adjudication_budget_min = 0;
@@ -429,7 +438,7 @@ inline void Resident::period(Ledger& L, Firm& f, Tape& tape, const Store& store,
     if (o.id >= memo_hash.size()) memo_hash.resize((size_t)o.id + 1024, 0u);
     const Ledger::LastProp* m = L.memo(o.id);
     const bool valid = m && m->judge_hash == judge.hash() && memo_hash[o.id] == fr.frame_hash;
-    const bool floor = valid && (u01(0x524541444BULL /*'READK'*/, 7400 + c, o.id * 131u + day) < wr.eps_floor);
+    const bool floor = valid && !clock_high && (u01(0x524541444BULL /*'READK'*/, 7400 + c, o.id * 131u + day) < wr.eps_floor);   // clock_high is O25's lie
     if (valid) has_prop[i] = 1;
     if (!valid || floor) { needs_read[i] = 1; cand.push_back(i); }
   }
@@ -438,7 +447,7 @@ inline void Resident::period(Ledger& L, Firm& f, Tape& tape, const Store& store,
     return L.ob[rows[x]].id < L.ob[rows[y]].id; });
   int reads_now = 0;
   for (int i : cand) {
-    if (reads_now >= wr.read_budget) break;
+    if (reads_now >= budget_now) break;
     const Obligation& o = L.ob[rows[i]]; const int c = o.cls;
     const Proposal mr = judge.read(frames[i]);
     const float direction = 4.0f * mr.signal * (0.35f + 0.65f * mr.completeness_hat);
@@ -448,12 +457,15 @@ inline void Resident::period(Ledger& L, Firm& f, Tape& tape, const Store& store,
     // written on a read only, and folded into the ledger's memo as it is written.
     // a floor re-read is a read of a cell that already carried a valid proposal
     if (has_prop[i]) ++st.reads_floor; else ++st.reads_fresh;
-    put_fold(tape, L, R_PROPOSAL, day, o.id, c, -1, ARM_MACHINE, mr.choice, (int)mr.judge_hash, direction, mr.completeness_hat, b, 0, 0, PROV_M);
+    if (lie_silent_proposal && (o.id % 50u) == 3u)             // THE LIE (O30): a proposal the memo knows and the tape never saw
+      L.apply(Tape::make(R_PROPOSAL, day, o.id, c, -1, ARM_MACHINE, mr.choice, (int)mr.judge_hash, direction, mr.completeness_hat, b, 0, 0, PROV_M));
+    else
+      put_fold(tape, L, R_PROPOSAL, day, o.id, c, -1, ARM_MACHINE, mr.choice, (int)mr.judge_hash, direction, mr.completeness_hat, b, 0, 0, PROV_M);
     memo_hash[o.id] = frames[i].frame_hash;
     has_prop[i] = 1; ++reads_now; ++st.reads;
   }
   for (int i = 0; i < N; ++i) if (has_prop[i] && !needs_read[i]) ++st.memo_hits;
-  if (reads_now >= wr.read_budget && (int)cand.size() > reads_now) ++st.budget_bound;
+  if (reads_now >= budget_now && (int)cand.size() > reads_now) ++st.budget_bound;
   // the forgone dual: what the budget left unread, priced by the field's own duals
   for (int i = 0; i < N; ++i) { st.total_dual += std::fabs(tr.u[i]); if (!has_prop[i]) st.forgone_dual += std::fabs(tr.u[i]); }
 
@@ -501,6 +513,8 @@ inline void Resident::period(Ledger& L, Firm& f, Tape& tape, const Store& store,
     g.in_canary = (stratum == 1);
     g.in_audit  = (stratum == 2);
     g.budget_left = (float)(adjudication_budget_min - adj_used * 45.0);
+    g.sw = L.sw;
+    if (lie_effect_under_off && L.sw == SW_OFF && (i % 500) == 7) g.sw = SW_LIVE;   // THE LIE (O19)
 
     const GateOut v = gate(g, wr);
     if (v.verdict != V_HOLD) ++st.reason_count[v.reason];       // a hold counts its reason where it is written
@@ -514,8 +528,8 @@ inline void Resident::period(Ledger& L, Firm& f, Tape& tape, const Store& store,
 
     switch (v.verdict) {
       case V_ACT: {
-        o.completeness = mach_complete[i];
-        hand.commit(L, tape, idx, m.choice, day, direction, b, 1);   // via 1: the wager
+        if (!shadow) o.completeness = mach_complete[i];
+        if (!hand.commit(L, tape, idx, m.choice, day, direction, b, 1, nov, sharp, shadow)) break;   // via 1: the wager (a shadow row only on change)
         ++st.acted; ++st.acted_by_class[c];
         st.completeness.add(o.completeness);
         st.sup_removed_min += would_cost; sup.add_removed(c, b, would_cost);
@@ -531,42 +545,43 @@ inline void Resident::period(Ledger& L, Firm& f, Tape& tape, const Store& store,
         const Proposal fr = frontier.read(frames[i]);
         const float boost = 0.72f;
         if (frontier.act_coin(c, o.id, boost)) {               // F16: the coin is the judge's, on its own key
-          o.completeness = fr.completeness_hat;
-          hand.commit(L, tape, idx, fr.choice, day,
-                      direction + (direction > 0 ? 0.9f : -0.9f), b, 3);     // via 3: a rented mind acted
+          if (!shadow) o.completeness = fr.completeness_hat;
+          if (!hand.commit(L, tape, idx, fr.choice, day,
+                           direction + (direction > 0 ? 0.9f : -0.9f), b, 3, nov, sharp, shadow)) break;   // via 3: a rented mind acted
           ++st.acted; ++st.acted_by_class[c];
           st.sup_removed_min += would_cost; sup.add_removed(c, b, would_cost);
         } else {
-          o.state = OB_ESCALATED; ++st.warrant; ++adj_used;
+          if (!shadow) o.state = OB_ESCALATED;
+          ++st.warrant; ++adj_used;
           st.sup_created_min += 22.0; sup.add_created(c, b, 22.0);
           // v2: a = the seat that keeps it (the resident escalates without moving it), so a fold does not reseat the cell
-          tape.put(R_ESCALATE, day, o.id, c, -1, ARM_MACHINE, o.seat, o.escalations, direction, sp.value, b, 0, 0, PROV_M);
+          tape.put(R_ESCALATE, day, o.id, c, -1, ARM_MACHINE, o.seat, o.escalations, direction, sp.value, b, shadow ? RF_SHADOW : 0, 0, PROV_M);
         }
         break;
       }
       case V_DRAFT: {
         // the resident prepares; a person presses the key. This is real
         // supervision created, and it is why a draft is not free.
+        if (!shadow) o.completeness = mach_complete[i];
+        if (!hand.commit(L, tape, idx, m.choice, day, direction, b, 2, nov, sharp, shadow)) break;   // via 2: assisted, never the wager
         ++st.drafted; ++adj_used;
         const double review = 4.0 + 9.0 * C.decide_frac[c];
         st.sup_created_min += review; sup.add_created(c, b, review);
         st.sup_removed_min += would_cost - review;
         sup.add_removed(c, b, std::max(0.0, would_cost - review));
-        o.completeness = mach_complete[i];
-        hand.commit(L, tape, idx, m.choice, day, direction, b, 2);   // via 2: assisted, never the wager
         if (v.reason == RS_AUDIT) ++st.audit;
         break;
       }
       case V_WARRANT: {
+        // the signer executes the machine's choice verbatim on the stratum; a
+        // refusal is a veto ROW and grades nothing
+        if (!shadow) o.completeness = mach_complete[i];
+        if (!hand.commit(L, tape, idx, m.choice, day, direction, b, 4, nov, sharp, shadow)) break;   // via 4: assisted, never the wager
         ++st.warrant; ++adj_used;
         const double sign = 12.0 + 20.0 * C.decide_frac[c];
         st.sup_created_min += sign; sup.add_created(c, b, sign);
         st.sup_removed_min += std::max(0.0, would_cost - sign);
         sup.add_removed(c, b, std::max(0.0, would_cost - sign));
-        // the signer executes the machine's choice verbatim on the stratum; a
-        // refusal is a veto ROW and grades nothing
-        o.completeness = mach_complete[i];
-        hand.commit(L, tape, idx, m.choice, day, direction, b, 4);   // via 4: assisted, never the wager
         break;
       }
       default: {

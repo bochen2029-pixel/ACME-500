@@ -48,6 +48,7 @@
 #include "core.h"
 #include "firm.h"
 #include "ledger.h"   // the hand mutates the LEDGER; solver.h never sees the plant (O17)
+#include "gate.h"     // D2: the gate is its own hashed header; solver.h keeps the field and the hand
 
 namespace acme {
 
@@ -240,92 +241,6 @@ struct Transport {
 };
 
 // ----------------------------------------------------------------------------
-// §3 · THE GATE — deterministic, nothing learned, the only author of actions
-// ----------------------------------------------------------------------------
-enum Verdict : uint8_t {
-  V_HOLD = 0,        // recorded. The majority of decisions in any period.
-  V_ACT,             // the resident acts, unattended
-  V_DRAFT,           // the resident prepares; a person presses the key
-  V_FRONTIER,        // thin margin: rent a bigger mind, then re-gate
-  V_WARRANT,         // a signature the law reserves, or nothing legal is left
-  V_N
-};
-enum Reason : uint8_t {
-  RS_OK = 0, RS_UNLICENSED, RS_THIN, RS_NOVEL, RS_IRREVERSIBLE, RS_LAW,
-  RS_NO_BUDGET, RS_BLOCKED, RS_AUDIT, RS_CANARY, RS_UNSURE,
-  RS_UNREAD,         // C1: the read budget never reached this cell and it carries no proposal: a hold
-  RS_N
-};
-inline const char* verdict_name(int v) { static const char* n[] = {"HOLD","ACT","DRAFT","FRONTIER","WARRANT"}; return n[v % V_N]; }
-inline const char* reason_name(int r);
-// THE ALPHABET PIN. Train == serve at the tokenizer: the synthetic world and a
-// real lane emit rows under one pin, the HEADER row carries it, a fold refuses
-// a tape whose pin differs. It covers everything a row can say: the record
-// version, every record type by name, every verb, every refusal reason, every
-// act kind, every provenance, the band count, the outcome kinds, and the
-// authored class table (schema_hash). Adding a reason or a row type changes it,
-// which is the widening the pin exists to make loud.
-inline uint32_t alphabet_hash() {
-  Blake2b b;
-  const uint32_t ver = REC_VER; b.update(&ver, 4);
-  const uint32_t nt = R_N;  b.update(&nt, 4);
-  for (int t = 0; t < R_N; ++t)  { const char* s = rec_type_name(t); b.update(s, strlen(s)); }
-  const uint32_t nv = V_N;  b.update(&nv, 4);
-  for (int v = 0; v < V_N; ++v)  { const char* s = verdict_name(v);  b.update(s, strlen(s)); }
-  const uint32_t nr = RS_N; b.update(&nr, 4);
-  for (int r = 0; r < RS_N; ++r) { const char* s = reason_name(r);   b.update(s, strlen(s)); }
-  const uint32_t na = ACT_N; b.update(&na, 4);
-  for (int k = 0; k < ACT_N; ++k) { const char* s = act_name(k);     b.update(s, strlen(s)); }
-  const uint32_t nb = NBAND, no = OK_N, np = 4; b.update(&nb, 4); b.update(&no, 4); b.update(&np, 4);
-  const uint32_t sh = schema_hash(); b.update(&sh, 4);
-  uint8_t h[32]; b.final(h);
-  return (uint32_t)h[0] | ((uint32_t)h[1] << 8) | ((uint32_t)h[2] << 16) | ((uint32_t)h[3] << 24);
-}
-inline const char* reason_name(int r) {
-  static const char* n[] = {"ok","unlicensed","thin-margin","novel-case","irreversible","law","no-adjudication-budget","blocked-by-dep","audit-sample","canary","unsure-placement","unread"};
-  return n[r % RS_N];
-}
-
-struct GateIn {
-  int   cls;
-  int   rung;            // the licence rung of THIS class-band, not of the system
-  int   band;
-  float direction;       // signed
-  float sharpness;       // excess spread over the class's own baseline
-  float novelty;         // conformal, [0,1]
-  bool  reversible;
-  bool  warrant_reserved;
-  bool  blocked;
-  bool  in_canary;       // drawn by keyed hash the resident cannot predict
-  bool  in_audit;        // the sampled review fraction that never reaches zero
-  float budget_left;     // adjudication minutes remaining today
-};
-struct GateOut { uint8_t verdict; uint8_t reason; };
-
-// THE ORDER OF REFUSAL IS PUBLISHED AND FIXED. It is part of the design, not an
-// implementation detail, and the fact that budget is checked LAST is the safety
-// property: running out of supervision produces a hold, never an act.
-inline GateOut gate(const GateIn& g, const Writ& wr) {
-  if (g.blocked)                              return { V_HOLD,     RS_BLOCKED };
-  if (g.warrant_reserved)                     return { V_WARRANT,  RS_IRREVERSIBLE };
-  if (g.novelty > 0.97f)                      return { V_WARRANT,  RS_NOVEL };  // outside the population the licence was earned on
-  if (g.rung <= 0)                            return { V_DRAFT,    RS_UNLICENSED };
-  if (g.in_audit)                             return { V_DRAFT,    RS_AUDIT };
-  if (std::fabs(g.direction) < wr.thin_margin) {
-    if (g.rung >= 2)                          return { V_FRONTIER, RS_THIN };
-    return { V_DRAFT, RS_THIN };
-  }
-  // A wide support spectrum means the field cannot say where this belongs; that
-  // is uncertainty about PLACEMENT, not a case outside the licensed population,
-  // and the first run printed both under one word.
-  if (g.sharpness > 2.5f)                     return { V_FRONTIER, RS_UNSURE };
-  if (!g.reversible && g.rung < 4)            return { V_WARRANT,  RS_IRREVERSIBLE };
-  if (g.rung == 1 && !g.in_canary)            return { V_DRAFT,    RS_UNLICENSED };
-  if (g.budget_left <= 0.f && g.rung < 3)     return { V_HOLD,     RS_NO_BUDGET };
-  return { V_ACT, g.in_canary ? RS_CANARY : RS_OK };
-}
-
-// ----------------------------------------------------------------------------
 // §4 · THE HAND — the single writer. Every effect carries its inverse.
 // ----------------------------------------------------------------------------
 struct Effect {
@@ -338,19 +253,31 @@ struct Integrator {
   std::vector<Effect> ledger;
   uint64_t n_undone = 0;
 
-  void commit(Ledger& L, Tape& tape, uint32_t idx, int decision, uint32_t day, float margin, int band, int via = 1) {
+  // D2: `packed` carries the gate's novelty and sharpness beside the previous
+  // state in the row's b (gate.h), so O30 can re-derive the verdict from rows;
+  // `shadow` writes the row flagged and mutates nothing.
+  bool commit(Ledger& L, Tape& tape, uint32_t idx, int decision, uint32_t day, float margin, int band, int via = 1,
+              float novelty = 0.f, float sharpness = 0.f, bool shadow = false) {
     Obligation& o = L.ob[idx];
+    if (shadow) {                                           // D2: a shadow effect is a row on change, like a hold
+      const uint8_t key = (uint8_t)(1 + ((via & 7) | ((decision & 1) << 3) | ((band & 3) << 4)));
+      if (o.shadow_key == key) return false;
+      o.shadow_key = key;
+    }
     Effect e{}; e.oid = o.id; e.day = day; e.cls = o.cls; e.decision = decision;
     e.prev_state = o.state; e.prev_seat = o.seat; e.prev_decided = o.day_decided;
     e.reversible = cls_spec(o.cls).reversible;
     // THE INVERSE IS RECORDED BEFORE THE EFFECT LEAVES. v2: the row carries the
     // via, so a fold knows whether this was the wager or a draft a person keyed.
-    tape.put(R_EFFECT, day, o.id, o.cls, -1, ARM_MACHINE, decision, (int)e.prev_state, margin,
-             cls_spec(o.cls).value, band, e.reversible ? RF_REVERSIBLE : 0, via, PROV_M);
+    tape.put(R_EFFECT, day, o.id, o.cls, -1, ARM_MACHINE, decision, pack_gate_inputs((int)e.prev_state, novelty, sharpness), margin,
+             cls_spec(o.cls).value, band, (e.reversible ? RF_REVERSIBLE : 0) | (shadow ? RF_SHADOW : 0), via, PROV_M);
+    if (shadow) return true;                                // the record stands; the cell does not move
     ledger.push_back(e);
     o.decision = decision; o.state = OB_DECIDED; o.day_decided = day; o.by_machine = 1; o.band = (uint8_t)band; o.via = (uint8_t)via;
     o.margin = margin;
     o.hold_reason = 0; o.hold_seat = -1; o.mhold_reason = 0; o.mhold_band = 0;   // D0: an effect ends every hold in force
+    o.shadow_key = 0;
+    return true;
   }
   // An effect is reversible only until the world reacts to it, and the world's
   // reaction is the outcome being graded. So the window closes at settlement,
