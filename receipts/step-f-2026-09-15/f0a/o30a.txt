@@ -1,0 +1,2 @@
+  [PASS] O30a the gate is pinned: include/acme/gate.h digests to its pin b596fe9f9af4aa25
+  [PASS] O30a the gate is pinned: a one-token change to the gate no longer matches the pin   (with oracle 30a lied to: PASS on its line means the lie was caught)

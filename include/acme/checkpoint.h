@@ -32,6 +32,7 @@
 #include "world.h"
 #include "tapefile.h"
 #include "gate.h"
+#include "lanes.h"      // F0a: the lane set is live state and restores with the rest
 #include <cstdio>
 #include <ctime>
 #include <string>

@@ -34,6 +34,7 @@
 #include "acme/governor.h"   // the salt, the strata, the ladder: main wires it; the machine never includes it
 #include "acme/report.h"
 #include "acme/panel.h"     // E4: the account, the instrument panel
+#include "acme/lanes.h"     // F0a: the tape of tapes, the roster and the merge
 #include "acme/tapefile.h"    // D1: the durable tape
 #include "acme/checkpoint.h"  // D1: the checkpoint beside it
 #include "acme/dump.h"        // D1: --dump DIR, the observer's contract
@@ -162,6 +163,7 @@ enum { MODE_SYNTHETIC = 0 };   // the switch enum lives in gate.h (D2)
 static float wall_for(const Args& a, int d) { return a.wall_jitter ? 100.f * u01(0x57414C4CULL /*'WALL'*/, 9100, (uint32_t)d) : 0.f; }
 
 static void run_human(Run& R, int days, bool chain = true, int from_day = 0, int sw = SW_LIVE, const Args* a = nullptr) {
+  LaneSet lanes;                                  // F0a: the incumbent's own lanes; the world port seals its periods too
   R.tape.chaining = chain;
   if (from_day == 0) { R.hs.init(R.w.NC); if (R.L.NC == 0) R.init_ledger(); }
   auto rep = reports_of(R.f);
@@ -171,6 +173,7 @@ static void run_human(Run& R, int days, bool chain = true, int from_day = 0, int
     tick_fold(R.tape, R.L, (uint32_t)d, a ? wall_for(*a, d) : 0.f);   // D0: the clock is a row, and the ledger's day moves with it
     human_day(R.w, R.L, R.f, R.tape, R.hs, rep, (uint32_t)d);
     world_settle(R.w, R.L, R.f, R.tape, (uint32_t)d);
+    seal_period(R.tape, lanes, (uint32_t)d);      // F0a: the world port closes the period over every lane (O42)
     dump_snapshot(R.tape, R.L, R.f, (uint32_t)d, nullptr, nullptr);
   }
 }
@@ -251,6 +254,7 @@ struct MachineRun {
   Resident res; Governor gov;
   std::unique_ptr<TapeFile> file;               // the durable tape, if --tape
   int ckpt_every = 0; std::string tape_dir;
+  LaneSet lanes;                                // F0a: the per-lane chains the world port seals each period
   MachineRun(const Args& a_, Run& r, int warm_, int total_) : a(a_), R(r), warm(warm_), total(total_), store(&r.w) {}
 
   Judge* frontier_judge = nullptr;              // E3: the rented mind behind the port, overridable (O31 stands the boundary judge there too)
@@ -268,7 +272,7 @@ struct MachineRun {
     if (file) file->flush();
     const uint64_t cursor = R.tape.size(); uint8_t head[32]; memcpy(head, R.tape.head, 32);
     const bool ok = ckpt_write(tape_dir, d, cursor, head, [&](Ser& s) {
-      ser(s, R.L); ser(s, R.hs); ser(s, R.f); s.pod(R.tape.last_tick_at);
+      ser(s, R.L); ser(s, R.hs); ser(s, R.f); s.pod(R.tape.last_tick_at); s.pod(lanes);   // F0a: the lanes' heads are live state (O18)
       ser(s, res); ser(s, gov); ser(s, *resident_judge); ser(s, *frontier);
       ser(s, C); ser(s, RP); s.pod(hist_licensed); s.pod(replay_ms); s.pod(periods);
     });
@@ -304,6 +308,7 @@ struct MachineRun {
       res.grade(R.L, *judge, *frontier_judge);                                       // the field learns; the judges are told
       gov.step(R.L, res.sup, R.tape);                                                // the ladder moves, as rows (E3: terms, lapses, the regime detector)
       if (Ladder::term_boundary((uint32_t)d, R.f.writ.term_days)) res.calib_open_term(R.L, R.tape, (uint32_t)d);   // E3c: the curves freeze with the bars
+      seal_period(R.tape, lanes, (uint32_t)d);                                       // F0a: the world port closes the period over every lane (O42)
       ++periods;
       dump_snapshot(R.tape, R.L, R.f, (uint32_t)d, &gov.lad, &res.st);
       if (file && ckpt_every > 0 && ((d + 1 - warm) % ckpt_every == 0 || d + 1 == total)) checkpoint((uint32_t)d);
@@ -396,7 +401,7 @@ static bool run_machine_resume(const Args& a, Run& R, int warm_days, int total_d
   M.make_judges(nullptr);
   R.init_ledger(); R.hs.init(R.w.NC);
   const CkptInfo ck = ckpt_find_and_read(M.tape_dir, (uint32_t)total_days, R.tape.size(), [&](Des& d) {
-    des(d, R.L); des(d, R.hs); des(d, R.f); d.pod(R.tape.last_tick_at);
+    des(d, R.L); des(d, R.hs); des(d, R.f); d.pod(R.tape.last_tick_at); d.pod(M.lanes);   // F0a: the lanes' heads restore with the rest (O18)
     des(d, M.res); des(d, M.gov); des(d, *M.resident_judge); des(d, *M.frontier);
     des(d, M.C); des(d, M.RP); d.pod(M.hist_licensed); d.pod(M.replay_ms); d.pod(M.periods);
   });
@@ -1089,6 +1094,7 @@ static int cmd_selftest(const Args& a) {
           case R_REGIME:   if (r.seat != -3 || r.arm != ARM_GOVERNOR || r.a != 1 || r.b < 0 || r.value <= 0.f) shape_fail(r, "regime"); break;   // E3
           case R_CALIB:    if (r.seat != -1 || r.arm != ARM_MACHINE || r.prov != PROV_M || r.a < 0 || r.a >= CALIB_NBIN || r.b < 0 || r.margin < 0.f || r.margin > 1.f || r.via > 1 || r.band > 1) shape_fail(r, "calib"); break;   // E3c
           case R_COUNSEL:  if (r.seat != -1 || r.arm != ARM_MACHINE || r.prov != PROV_M || r.oid == 0 || r.a == 0 || r.via != 3) shape_fail(r, "counsel"); break;   // E4: the rental as a row
+          case R_SEAL:     if (r.seat != -3 || r.arm != ARM_GOVERNOR || r.a != LANE_N || r.oid != 0 || r.value < 0.f) shape_fail(r, "seal"); break;   // F0a
           case R_STRATUM:  if (r.seat != -3 || r.arm != ARM_GOVERNOR || r.a < 0 || r.a > 3 || r.oid == 0 || r.margin < 0.f) shape_fail(r, "stratum"); break;
           default: break;
         }
@@ -1317,21 +1323,27 @@ static int cmd_selftest(const Args& a) {
     }
     // --- O25 (dynamic): THE SAME ROWS AT DIFFERENT WALL SPACING GIVE IDENTICAL
     //          VERDICTS. A's twin with a jittered clock on the TICK rows; every
-    //          row but the TICK's wall value identical. The lie: a resident that
-    //          reads the wall value.
+    //          row identical but for the operator's clock and what a hash chain
+    //          necessarily carries of it: the TICK row's wall value, and the
+    //          SEAL row's merged head (F0a), which is a chain over every byte of
+    //          every lane and therefore over that wall value. Neither is a
+    //          verdict, and no verdict, licence or effect may move. The lie: a
+    //          resident that reads the wall value.
     {
       Args aj = aa; aj.wall_jitter = true; aj.lie = (LIE == 23) ? 23 : -1;
       Run J; J.f = build_acme(200, 7, 7); J.w = make_world(7); J.w.demand_scale = 1.5f;
       const AutoOut oj = run_machine(aj, J, aj.warm, aj.days, false);
       (void)oj;
-      bool same = J.tape.size() == A.tape.size(); long first = -1, ticks_differ = 0;
+      bool same = J.tape.size() == A.tape.size(); long first = -1, ticks_differ = 0, seals_differ = 0;
       if (same) for (size_t i = 0; i < A.tape.size(); ++i) {
         Rec x = A.tape.rec[i], y = J.tape.rec[i];
         if (x.type == R_TICK && y.type == R_TICK) { if (x.value != y.value) ++ticks_differ; x.value = y.value = 0.f; }
+        if (x.type == R_SEAL && y.type == R_SEAL) { if (x.b != y.b) ++seals_differ; x.b = y.b = 0; }   // F0a: the chain carries the clock; the verdicts do not
         if (memcmp(&x, &y, sizeof(Rec)) != 0) { same = false; first = (long)i; break; }
       }
       const bool ok = same && ticks_differ > 0;
-      snprintf(buf, sizeof buf, "(%zu rows against %zu; %ld TICK rows carry a different wall value; every other byte %s%s)", A.tape.size(), J.tape.size(), ticks_differ,
+      snprintf(buf, sizeof buf, "(%zu rows against %zu; %ld TICK rows carry a different wall value and %ld SEAL rows a different merged head, because the chain covers that value; every other byte %s%s)",
+               A.tape.size(), J.tape.size(), ticks_differ, seals_differ,
                same ? "identical" : "DIFFERS", same ? "" : (first >= 0 ? (std::string(", first at row ") + std::to_string(first)).c_str() : ", the row counts differ"));
       ck(LIE == 23 ? !ok : ok, "O25  the same rows at different wall spacing give identical verdicts: the machine reads the day, never the clock", buf);
     }
@@ -1609,6 +1621,42 @@ static int cmd_selftest(const Args& a) {
                live.total() / 1000, cold.total() / 1000, live.coherence / 1000, cold.coherence / 1000, cl.good, cc.good, cpi_live, cpi_cold,
                cl.wait_to_decide_days, cl.wait_to_settle_days, cc.wait_to_decide_days, cc.wait_to_settle_days, k1.rentals, k1.distinct);
       ck(LIE == 32 ? !ok : ok, "O48  the account folds from the tape: every panel number from a cold fold equals the live panel's", buf);
+    }
+    // --- O42: THE TAPE OF TAPES (F0a). Three claims on A's tape. (a) Every
+    //          SEAL's b re-derives from a cold split of the tape at that row:
+    //          the lanes the world port sealed are a function of the rows and
+    //          of nothing the run carried. (b) The lanes merged back in the
+    //          published order (day, phase, lane, sequence) fold to the same
+    //          ledger as the flat tape, which is what makes a lane a protocol
+    //          rather than a copy. (c) No row of a sealed period appears after
+    //          its SEAL. The lie: one row of a sealed period folded into the
+    //          period after it.
+    {
+      const Tape& T = A.tape;
+      long seals = 0, seal_bad = 0, late = 0; uint32_t last_seal_day = 0; bool any_seal = false;
+      for (size_t i = 0; i < T.rec.size(); ++i) {
+        const Rec& r = T.rec[i];
+        if (r.type == R_SEAL) {
+          ++seals; any_seal = true; last_seal_day = r.day;
+          const LaneSplit s = split_lanes(T, i);           // the lanes as they stood when the seal was written
+          uint8_t h[32]; s.merged(h);
+          const uint32_t b = (uint32_t)h[0] | ((uint32_t)h[1] << 8) | ((uint32_t)h[2] << 16) | ((uint32_t)h[3] << 24);
+          if (b != (uint32_t)r.b) ++seal_bad;
+        } else if (any_seal && r.day <= last_seal_day && r.type != R_NOTE) ++late;
+      }
+      const LaneSplit s = split_lanes(T);
+      const std::vector<Rec> merged = merge_lanes(s, LIE == 33);
+      Ledger F; F.init(A.w.NC); for (const Rec& r : T.rec) F.apply(r);
+      Ledger M2; M2.init(A.w.NC); for (const Rec& r : merged) M2.apply(r);
+      const FoldDiff fd = ledger_diff(F, M2);
+      long moved = 0; const size_t n = std::min(merged.size(), T.rec.size());
+      for (size_t i = 0; i < n; ++i) if (memcmp(&merged[i], &T.rec[i], sizeof(Rec)) != 0) ++moved;
+      char lanes_txt[160] = {0}; int off = 0;
+      for (int l = 0; l < LANE_N; ++l) off += snprintf(lanes_txt + off, sizeof(lanes_txt) - off, "%s%s %llu", l ? " · " : "", lane_name(l), (unsigned long long)s.rows[l]);
+      const bool ok = seals > 0 && seal_bad == 0 && late == 0 && merged.size() == T.rec.size() && fd.fields == 0;
+      snprintf(buf, sizeof buf, "(%zu rows over %d lanes: %s; %ld seals, %ld whose merged head did not re-derive, %ld rows of a sealed period written after its seal; the merge folds to the same ledger: %ld field diffs%s%s; %ld of %zu rows sit at a different index under the merge, which the fold does not read)",
+               T.rec.size(), (int)LANE_N, lanes_txt, seals, seal_bad, late, fd.fields, fd.fields ? ", first: " : "", fd.fields ? fd.first : "", moved, T.rec.size());
+      ck(LIE == 33 ? !ok : ok, "O42  the tape of tapes: every SEAL re-derives from a cold split, and the lanes merged in the published order fold to the flat tape's ledger", buf);
     }
   }
 

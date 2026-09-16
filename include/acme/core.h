@@ -199,11 +199,14 @@ enum RecType : uint16_t {
                  // b = the closing term's count, margin = the previous term's, value = the ratio; the bands drop to watching
   R_CALIB,       // E3c: the calibration curve frozen for the term, one row per class per |direction| bin: a = the bin,
                  // b = the cells graded in it, margin = the fitted wrong-rate, value = the raw, via = measured, band = monotone
+  R_SEAL,        // F0a: the world port closes the period over every lane (lanes.h): a = lanes sealed, b = the low 32 bits of
+                 // BLAKE2b over the lanes' heads in lane order, value = the rows sealed this period. The firm's chain head is
+                 // the last SEAL's merged head; a row of a sealed period arriving later is late and folds at t+1 (O42)
   R_N
 };
 inline const char* rec_type_name(int t) {
   static const char* n[] = { "NONE","ARRIVE","ASSIGN","HOLD","DECIDE","EFFECT","UNDO","ESCALATE","OUTCOME","CONTEXT","MEETING",
-                             "TICK","LICENSE","KAPPA","PATCH","NOTE","HEADER","PROPOSAL","STRATUM","COUNSEL","ACT","RECEIPT","CORRECTION","SENSE","REGIME","CALIB" };
+                             "TICK","LICENSE","KAPPA","PATCH","NOTE","HEADER","PROPOSAL","STRATUM","COUNSEL","ACT","RECEIPT","CORRECTION","SENSE","REGIME","CALIB","SEAL" };
   return (t >= 0 && t < R_N) ? n[t] : "?";
 }
 enum ActKind : uint8_t { ACT_FETCH = 0, ACT_FRAME, ACT_DECIDE, ACT_COMMIT, ACT_TRANSPORT, ACT_REWORK, ACT_GLUE, ACT_MEETING, ACT_N };
