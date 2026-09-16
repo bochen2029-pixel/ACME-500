@@ -33,6 +33,7 @@
 #include "acme/license.h"
 #include "acme/governor.h"   // the salt, the strata, the ladder: main wires it; the machine never includes it
 #include "acme/report.h"
+#include "acme/panel.h"     // E4: the account, the instrument panel
 #include "acme/tapefile.h"    // D1: the durable tape
 #include "acme/checkpoint.h"  // D1: the checkpoint beside it
 #include "acme/dump.h"        // D1: --dump DIR, the observer's contract
@@ -515,6 +516,21 @@ static int cmd_automate(const Args& a) {
   print_binding_reasons(A.lad, R.f.writ, (uint32_t)(a.days - 1));
   print_retained(R.tape, R.w.NC, (uint32_t)a.warm);            // E3: the control arm, per class (O20's reading)
   print_calib(R.L, R.w.NC);                                    // E3c: the curve the gate read this term (O47's reading)
+  // E4: THE ACCOUNT — the instrument panel, folds over rows; nothing here feeds a mechanism
+  print_five_metrics(R.tape, R.L, A.ms, R.w.NC, (uint32_t)a.warm, (uint32_t)a.days);
+  print_cpi(R.tape, R.L, R.w.NC, "the resident arm, the warm period included");
+  print_roofline(R.tape, R.L, A.lad, R.f.writ, A.C, A.judge_hash, R.w.NC, (uint32_t)a.warm, (uint32_t)a.days);
+  print_fusion_ledger(R.tape, R.w.NC);
+  {
+    // two jurors against a fixed-competence plant judge: the rules coin (dissimilar, dumb) and a sibling on another key (similar, competent)
+    PlantStore store4(&R.w);
+    PlantJudge judge4(&R.w, 0x4A55444745ULL, JUDGE_RESIDENT_HASH, 0.55f, false);
+    RulesJudge coin4;
+    PlantJudge sibling4(&R.w, 0x5349424C494E47ULL, 0x5349424Cu, 0.55f, false);
+    print_jury_meter(R.L, A.C, store4, judge4, coin4, R.w.NC, "the rules coin (a different kind of judge)");
+    print_jury_meter(R.L, A.C, store4, judge4, sibling4, R.w.NC, "a sibling plant judge on another key (the same kind)");
+  }
+  print_validity(R.L, A.lad, A.C, A.judge_hash, R.w.NC, (uint32_t)(a.days - 1));
 
   rule("PHASE 5 · WHAT THE RESIDENT DID");
   std::printf("  acted unattended %llu   drafted for a person %llu   rented a frontier mind %llu\n"
@@ -642,6 +658,8 @@ static int cmd_twin(const Args& a) {
   print_minutes_by_via(minutes_by_via(B.tape, B.L), "the resident arm");
   print_path_length(path_length(A.tape, A.L), "the incumbent arm");
   print_path_length(path_length(B.tape, B.L), "the resident arm");
+  print_cpi(A.tape, A.L, A.w.NC, "the incumbent arm");                // E4: CPI for the firm, both arms
+  print_cpi(B.tape, B.L, B.w.NC, "the resident arm");
   if (a.shared || a.unresolved > 0.f || a.exposure_cap > 0.f) print_shared_fact(mb.ms, B.L, rb, a.exposure_cap);
 
   // THE BIAS OF THE CANARY ESTIMATOR
@@ -1070,6 +1088,7 @@ static int cmd_selftest(const Args& a) {
           case R_KAPPA:    if (r.seat != -3 || r.arm != ARM_GOVERNOR) shape_fail(r, "governor"); break;
           case R_REGIME:   if (r.seat != -3 || r.arm != ARM_GOVERNOR || r.a != 1 || r.b < 0 || r.value <= 0.f) shape_fail(r, "regime"); break;   // E3
           case R_CALIB:    if (r.seat != -1 || r.arm != ARM_MACHINE || r.prov != PROV_M || r.a < 0 || r.a >= CALIB_NBIN || r.b < 0 || r.margin < 0.f || r.margin > 1.f || r.via > 1 || r.band > 1) shape_fail(r, "calib"); break;   // E3c
+          case R_COUNSEL:  if (r.seat != -1 || r.arm != ARM_MACHINE || r.prov != PROV_M || r.oid == 0 || r.a == 0 || r.via != 3) shape_fail(r, "counsel"); break;   // E4: the rental as a row
           case R_STRATUM:  if (r.seat != -3 || r.arm != ARM_GOVERNOR || r.a < 0 || r.a > 3 || r.oid == 0 || r.margin < 0.f) shape_fail(r, "stratum"); break;
           default: break;
         }
@@ -1569,6 +1588,27 @@ static int cmd_selftest(const Args& a) {
       snprintf(buf, sizeof buf, "(%ld CALIB rows over %d terms; %d of %d classes measured, %d of those monotone, %d ever flagged non-monotone; %ld unattended acts, %ld on a key unmeasured or not monotone)",
                calib_rows, terms, measured, NC47, monotone, nonmono_ever, acts, acts_inadmissible);
       ck(LIE == 31 ? !ok : ok, "O47  the calibration curve per key is monotone, frozen per term as rows, and an unmeasured or non-monotone key licenses nothing", buf);
+    }
+    // --- O48: THE ACCOUNT FOLDS FROM THE TAPE (E4). Every panel number (the
+    //          minutes by reader class, the counts, the two waits, CPI, the
+    //          counsel rentals against distinct cells) computed from a cold fold
+    //          of A's tape equals the number computed from the live ledger. The
+    //          lie: a minute fold that drops the meetings.
+    {
+      const int NC = A.w.NC;
+      Ledger F; F.init(NC); for (const Rec& r : A.tape.rec) F.apply(r);
+      const PanelMinutes live = panel_minutes(A.tape, NC, false), cold = panel_minutes(A.tape, NC, LIE == 32);
+      const PanelCells cl = panel_cells(A.L, 2), cc = panel_cells(F, 2);
+      const CounselCount k1 = counsel_count(A.tape, (uint32_t)aa.warm);
+      const double cpi_live = cl.good ? live.total() / cl.good : 0.0, cpi_cold = cc.good ? cold.total() / cc.good : 0.0;
+      const bool minutes_eq = std::fabs(live.total() - cold.total()) < 1e-6 && std::fabs(live.coherence - cold.coherence) < 1e-6;
+      const bool cells_eq = cl.good == cc.good && cl.decided == cc.decided && cl.settled == cc.settled
+                         && std::fabs(cl.wait_to_decide_days - cc.wait_to_decide_days) < 1e-9 && std::fabs(cl.wait_to_settle_days - cc.wait_to_settle_days) < 1e-9;
+      const bool ok = minutes_eq && cells_eq && std::fabs(cpi_live - cpi_cold) < 1e-6 && cl.good > 0 && live.coherence > 0 && k1.rentals >= k1.distinct;
+      snprintf(buf, sizeof buf, "(the live panel against a cold fold: minutes %.1fk vs %.1fk (meetings %.1fk vs %.1fk), correctly discharged %ld vs %ld, CPI %.1f vs %.1f, waits %.1f/%.1f vs %.1f/%.1f days; %ld rentals on %ld distinct cells)",
+               live.total() / 1000, cold.total() / 1000, live.coherence / 1000, cold.coherence / 1000, cl.good, cc.good, cpi_live, cpi_cold,
+               cl.wait_to_decide_days, cl.wait_to_settle_days, cc.wait_to_decide_days, cc.wait_to_settle_days, k1.rentals, k1.distinct);
+      ck(LIE == 32 ? !ok : ok, "O48  the account folds from the tape: every panel number from a cold fold equals the live panel's", buf);
     }
   }
 

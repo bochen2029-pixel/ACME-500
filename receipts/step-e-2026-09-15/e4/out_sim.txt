@@ -1,0 +1,29 @@
+
+=== ACME CORP, AS IT IS ===============================================
+  500 seats, span 7, 6 layers.  439 IC / 34 lead / 12 manager / 6 director / 8 VP / 1 C
+  payroll $55.0M.  405 seats do external work, 88 exist because the firm has people, 7 hold a warrant.
+
+  THE YEAR — where 24518 thousand human minutes went
+    glue        32.40%  ##############................................  keeping up: reading, skimming, re-reading yesterday
+    meeting     16.59%  #######.......................................  context delivery between skulls
+    fetch       16.34%  #######.......................................  opening applications to find fields that were already stored
+    frame        8.42%  ###...........................................  rendering state for another human's eyes
+    decide      15.89%  #######.......................................  THE JOB
+    commit       6.89%  ###...........................................  typing the answer into another application
+    transport    3.20%  #.............................................  handoffs and escalations
+    rework       0.26%  ..............................................  re-acquiring context a skull could not hold
+    JUDGMENT    15.89%  <- the decide fraction. Everything else is the round trip.
+
+=== WHAT THE FIRM PRODUCED ============================================
+  settled 82479 obligations in 260 days: 42.7% good, 48.9% late, 8.4% wrong
+  mean cycle 51.9 days   deadline breaches 44678 (54.2%)   still open 123927
+  escalations 38089 (0.44 per decision)   meetings held 21914   holds recorded 4117431
+  writ cost of the outcomes: $236.7M   backlog at w_unplaced: $1601.0M (123927 open)   total $1837.7M
+
+  tape: 1607033 rows, chain head 3c49b9b3f0c14222..., verify OK   (1.6 s, 986499 rows/s)
+  rows by type: ARRIVE 206406 ASSIGN 111244 HOLD 83438 DECIDE 86296 ESCALATE 38089 OUTCOME 82479
+                CONTEXT 453309 MEETING 22100 TICK 260 HEADER 1 ACT 523411
+
+  READ THE LEDGER AGAIN. The escalation line is the round trip in its purest form:
+  every one of those 38089 escalations made a manager re-open systems an IC had
+  already opened, because the manager could not see the IC's screen.

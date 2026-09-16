@@ -52,7 +52,8 @@ set(LIE_LINE_28 "O31b")  # lie 28 = O31b, the same under the shared fact (the fl
 set(LIE_LINE_29 "O45")   # lie 29 = O45, the ladder v2 is a fold (a fold that skips one band's term boundary)
 set(LIE_LINE_30 "O59")   # lie 30 = O59, the regime detector (a detector that never hears)
 set(LIE_LINE_31 "O47")   # lie 31 = O47, the calibration harness (a confidently-wrong judge admitted on a class)
-foreach(N RANGE 0 31)
+set(LIE_LINE_32 "O48")   # lie 32 = O48, the account folds from the tape (a fold that drops the meetings)
+foreach(N RANGE 0 32)
   add_test(NAME lie_${N} COMMAND acme --selftest --lie ${N})
   set_tests_properties(lie_${N} PROPERTIES
     PASS_REGULAR_EXPRESSION "\\[PASS\\] ${LIE_LINE_${N}} "

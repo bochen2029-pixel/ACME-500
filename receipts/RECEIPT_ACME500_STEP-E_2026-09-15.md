@@ -161,3 +161,38 @@ Hashes (sha256, first 16): core.h `06c7944567275094` · firm.h `5aa9a0065a31a5d4
 Hashes (sha256, first 16): calib.h `23a1942c777833c4` · core.h `1d027b0f51cf9875` · firm.h `f92f13fff89362f0` · gate.h `2f53dc271cd0095e` · ledger.h `7d6ba27be2dd2eac` · governor.h `ce23b6d6328040d0` · machine.h `f5b992d975c8789a` · world.h `56adc32f2f3833d1` · report.h `f66b03b53edb4a1c` · checkpoint.h `719d5217ce12df58` · main.cpp `63c17f02c0ed5ebf` · CMakeLists.txt `870601940ae6572f`; license.h `40839b21729bc56a` as at E3b; dump.h, human.h, port.h, solver.h, tapefile.h as at E0. Outputs: `receipts/step-e-2026-09-15/e3c/` (41 files).
 
 **E3 closes here.** F14, F21 and F23 are closed; F24 was found and fixed; the ladder is the ladder v2 with the retained stratum, the regime detector and the calibration harness; O20, O31, O31b, O45, O47 and O59 stand with their lies; the honest licensed mass at ACME's schema is 13.1 percent and the judge is not the lever there. Next, per v4.1 §39.2: **F0**, the lanes, adopting fusord's lane contract v0.1 as the wire.
+
+## E4 · the account: the instrument panel, and what it says about the firm's own thinking
+
+*Claude Fable 5.1, 2026-09-15. A reading step, not a mechanism step: folds over rows that feed nothing, so that the questions the hardware toolbox asks of a processor can be asked of a firm. Built and run under WSL by `tools/run_step.sh step-e-2026-09-15/e4 receipts/step-e-2026-09-15/e3c`; raw outputs under `receipts/step-e-2026-09-15/e4/` (41 files).*
+
+**What landed.** `panel.h`, kernel side (core, firm, ledger, license, machine, port, gate, report; O17 still compiles the kernel with no plant and no governor), six folds and their prints, none of which reaches the gate, the ladder or the judge:
+
+1. **The five metrics**, per arm: cycle time per promise to the decision and to the verdict; promises settled per period; decisions per context moved; cost per committed effect; the hierarchy's hit rates.
+2. **CPI for the firm**: minutes per *correctly discharged* obligation, split into processing (the read and the decision), transfer (the handoff), recovery (rework), coherence (meetings) and static (glue with no cell), with the handled-count CPI printed beside it and used by nothing.
+3. **The roofline per class**: judgments a day, systems per read, verdicts a day, verdicts per wager act, and the roof that binds licensing in each band, read off the ladder's own binding reason.
+4. **The fusion ledger**: the incumbent's minutes by who reads the intermediate, per class.
+5. **The jury meter**: a juror's disagreement rate with the judge on the settled history, and whether its disagreements are enriched for the judge's errors.
+6. **The validity record**: per class, the pins the licence depends on (schema, template, judge, calibration, term).
+
+One row was added to make the fourth metric a fold rather than a counter: **the frontier's rental is now a `COUNSEL` row** (`machine.h`), keyed on the frame hash it was read under, so rentals against distinct cells is a fold and E1′'s counsel memo has its target on the tape before a line of it is written. O29 gains its shape check. **O48** (lie 32): every panel number computed from a cold fold of the tape equals the live panel's; the lie is a minute fold that drops the meetings, which moves CPI from 203.9 to 171.0 and is caught.
+
+**The one delta, named.** The machine arm's path length reads **6.6 rows per obligation against E3c's 6.4**, because the rental is now a row: 22,576 COUNSEL rows over 125,787 machine-decided cells is 0.18 rows a cell, and the print rounds 6.58 to 6.6. Every other reading is identical to E3c to the digit: licensed decision mass 13.1 percent, 11 bands past rung 0, N 437, κ 0.064, 4,454 unattended acts, 23,549k human minutes, the retained stratum's 4,077 / 3,468 / 0. `--sim` is identical but for its wall time.
+
+**What the panel says, at 500 seats.** Five readings, each a fold, none of them a mechanism:
+
+| reading | the number | what it means |
+|---|---|---|
+| **CPI for the firm**, both arms | the incumbent **696.2** minutes per correctly discharged obligation against the resident's **326.8**; the handled-count CPI 284.1 against 114.5 | the honest numerator halves the claimed improvement: 2.1× on obligations the world called good, against the 2.5× a handled count would advertise. The counterweight is now a column and not a paragraph |
+| **where the minutes go** | processing 45.7 percent, static glue 33.7, coherence (meetings) 17.3, transfer 3.0, recovery 0.3 | the memory-wall reading in the firm's own units: **54.0 percent of all minutes are the legal fusion dividend** (transfer, coherence, static) against the 0.61 to 0.77 the flattening dividend reads by writes. The two disagree because a write is not a minute, and the minute is what a payroll pays |
+| **the roofline** | of 48 wager bands: **24 grading-bound**, 16 admission-bound, 3 baseline-bound, 5 at the top | the workload is grading-bound, which is the stub sweep's 2.6 points said per band instead of in aggregate. No engineering of the interior raises that roof |
+| **the hierarchy** | memo 53.7 percent of judgments; certificate not exercised at the defaults; **counsel 0 percent: 22,576 rentals on 5,377 distinct cells** | F12 priced: the counsel memo of E1′ is worth about 17,000 rentals a year at this schema, and the number is now read off the tape rather than estimated |
+| **the jury meter** | the rules coin disagrees on 49.9 percent of cells with enrichment **1.02×** (NOISE); a competent sibling judge on another key disagrees on 11.1 percent with wrong-rate 25.9 percent where it disagrees against 2.6 where it agrees, enrichment **10.00×** (a juror) | dissimilarity alone is not redundancy. A juror must be *competent* and of another key; a dumb dissimilar juror is a coin that disagrees half the time and finds nothing. §29's jury is admitted by this meter or not built |
+
+**One correction to a number I wrote earlier today.** The memo's hit rate was quoted in two brainstorms as 84.5 percent, which was carries over *reads*; the hit rate is carries over carries plus reads, **53.7 percent**. Both documents are corrected in place and say so.
+
+**Acceptance.** Build 0 warnings. `--selftest` **35 of 35** (147.0 s). Lie arms 0–32, six at a time, each exit 0 with the lied-to oracle's own line PASS. O17 both lies, O28, O25a, O30a both arms. O14 folds 413,070 rows to 0 diffs (the COUNSEL rows fold); O29 scans them with 0 shape faults; O30 re-derives 47,628 effects. Tree 7,644 lines.
+
+**What E4 did not do.** The dependency directory (F0's, so E2's coherence cost is O(sharers)); the two-axis licence with `exposure-bound` as a binding reason (F1b's, with the account); warm-set residency and its hit rate (waits on F-READS); bits moved per decision in bytes rather than systems per read (the frame's rendered size is not yet metered); a per-class jury meter admission rule (the meter prints; nothing consumes it).
+
+Hashes (sha256, first 16): panel.h `17a44e0a8927d3f9` · machine.h `17fcc8b4e30b479d` · main.cpp `a79baa7157eff75a` · CMakeLists.txt `25c64967cc4cdc08`; calib.h `23a1942c777833c4`, core.h `1d027b0f51cf9875`, firm.h `f92f13fff89362f0`, gate.h `2f53dc271cd0095e`, governor.h `ce23b6d6328040d0`, ledger.h `7d6ba27be2dd2eac`, license.h `40839b21729bc56a`, report.h `f66b03b53edb4a1c`, checkpoint.h `719d5217ce12df58`, world.h `56adc32f2f3833d1` as at E3c; dump.h, human.h, port.h, solver.h, tapefile.h as at E0. Outputs: `receipts/step-e-2026-09-15/e4/` (41 files).

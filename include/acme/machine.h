@@ -642,6 +642,11 @@ inline void Resident::period(Ledger& L, Firm& f, Tape& tape, const Store& store,
         // the rented mind reads the same frame, with less noise. It cannot
         // buy coverage: a fact nobody recorded is not available at any price.
         const Proposal fr = frontier.read(frames[i]);
+        // E4: THE RENTAL IS A ROW. A rented mind's proposal, keyed on the frame hash it
+        // was read under (a = its judge hash, b = the frame hash), so the counsel memo of
+        // E1' has its fold and the account can count rentals against distinct cells.
+        tape.put(R_COUNSEL, day, o.id, c, -1, ARM_MACHINE, (int)fr.judge_hash, (int)memo_hash[o.id],
+                 4.0f * fr.signal * (0.35f + 0.65f * fr.completeness_hat), fr.completeness_hat, b, shadow ? RF_SHADOW : 0, 3, PROV_M);
         const float boost = 0.72f;
         if (frontier.act_coin(c, o.id, boost)) {               // F16: the coin is the judge's, on its own key
           if (!shadow) o.completeness = fr.completeness_hat;
