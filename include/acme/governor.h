@@ -222,6 +222,45 @@ struct Governor {
   // E3 (O31's harness): every band past the thin band admitted to rung 1 as a
   // TEST admission, so the wager runs on every class at once and the
   // false-promotion rate can be counted over all of them. Never outside --o31.
+  // Z0 · THE BOOTSTRAP ADMISSION, the founding act of a firm with no history.
+  // On the empty planet there is nobody to shadow: the agreement band cannot be
+  // licensed from a settled history because there is no settled history, and a
+  // class that is never admitted never acts, never produces an outcome, and never
+  // licenses — the deadlock a zero-seat firm starts in. The constitution breaks it
+  // and nothing learned does: a class whose effect carries a usable inverse, whose
+  // signature no law reserves and whose counterparty does not demand a person, is
+  // admitted at founding to the CANARY RUNG ONLY, where the machine acts on the
+  // drawn sample and drafts nothing (there is nobody to key a draft). Everything
+  // above rung 1 is still earned from the world's outcomes, on the licensor's
+  // salt, exactly as before. This is the authored line, written once, pinned in
+  // the writ; it is the founding instance's single point of failure and it is
+  // named as such. A class the schema flags `warrant` or `counterparty` is NOT
+  // admitted: a zero-seat firm does not sell a promise that needs a person.
+  int bootstrap_admit(uint32_t day, Tape& tape, long& refused_warrant, long& refused_counterparty, int rung = 1) {
+    int n = 0; refused_warrant = refused_counterparty = 0;
+    rung = rung < 1 ? 1 : (rung > 4 ? 4 : rung);
+    for (int c = 0; c < lad.NC; ++c) {
+      const ClassSpec& s = cls_spec(c);
+      if (s.warrant)      { ++refused_warrant;      continue; }
+      if (s.counterparty) { ++refused_counterparty; continue; }
+      if (!s.reversible)  { ++refused_warrant;      continue; }   // an irreversible act with no signer holds, by law 2
+      for (int b = 1; b < NBAND; ++b) {
+        Lic& L = lad.at(c, b);
+        if (L.rung >= 1) continue;
+        // THE FOUNDING GRANT. How much authority the constitution hands a class
+        // before any evidence exists. At rung 1 the machine acts on the drawn
+        // sample only and holds the rest, which is safe and discharges almost
+        // nothing; above it the machine acts and the EXPOSURE CAP is the brake
+        // while the mirrored process demotes on the world's first evidence. The
+        // asymmetry is unchanged either way: evidence narrows at any moment,
+        // and only a ratified rule widens. This is the one dial that says what
+        // a firm with no history is allowed to assume about itself.
+        L.rung = rung; L.floor_rung = 1; ++n; license_row(tape, day, c, b, LC_BOOTSTRAP);
+      }
+    }
+    return n;
+  }
+
   int admit_all_for_test(uint32_t day, Tape& tape) {
     int n = 0;
     for (int c = 0; c < lad.NC; ++c) for (int b = 1; b < NBAND; ++b) {

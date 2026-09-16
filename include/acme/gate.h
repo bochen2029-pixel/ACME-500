@@ -106,20 +106,33 @@ struct GateIn {
   float exposure_left;   // E0: the writ's cap less the outstanding exposure; 1e30 when uncapped
   bool  calib_measured;  // E3c: the key's curve is measured and monotone this term (from CALIB rows); false reads rung 0
   float calib_wrong;     // E3c: the calibrated wrong-rate at this |direction|, from the frozen curve
+  bool  autark;          // Z0: the constitution says no person is inside the boundary (Writ::autark)
 };
 struct GateOut { uint8_t verdict; uint8_t reason; };
 
 // THE ORDER OF REFUSAL IS PUBLISHED AND FIXED. It is part of the design, not an
 // implementation detail, and the fact that budget is checked LAST is the safety
 // property: running out of supervision produces a hold, never an act.
-inline GateOut gate(const GateIn& g, const Writ& wr) {
+inline GateOut gate_verdict(const GateIn& g, const Writ& wr) {
   if (g.sw == SW_OFF)                         return { V_HOLD,     RS_SWITCH_OFF };   // D2: off is a hold, and the reason says so
   if (g.blocked)                              return { V_HOLD,     RS_BLOCKED };
-  if (g.to_incumbent)                         return { V_HOLD,     RS_RETAINED };     // E3: the control arm, at every rung: a person decides it
+  // E3: the control arm, at every rung. On the human planet a person decides it;
+  // under the autark constitution there is no person, so the tier above does, and
+  // the frontier path re-checks the exposure cap before it spends anything (Z0).
+  if (g.to_incumbent)                         return { g.autark ? V_FRONTIER : V_HOLD, RS_RETAINED };
   if (g.warrant_reserved)                     return { V_WARRANT,  RS_IRREVERSIBLE };
   if (g.novelty > 0.97f)                      return { V_WARRANT,  RS_NOVEL };  // outside the population the licence was earned on
   if (g.rung <= 0)                            return { V_DRAFT,    RS_UNLICENSED };
-  if (!g.calib_measured)                      return { V_DRAFT,    RS_UNCALIBRATED };   // E3c: no measured monotone curve, no licence
+  // E3c: no measured monotone curve, no licence — UNLESS the cell is a canary.
+  // Z0 found the deadlock this rule makes on a firm with no history: the curve is
+  // measured from the machine's OWN executed choices, so nothing executes until
+  // the curve exists and the curve never exists until something executes. On the
+  // human planet the incumbent's history broke the tie; with nobody inside the
+  // boundary there is no history, and the canary is the only instrument that can
+  // buy the first measurement. So the canary is not a rung on the way to
+  // graduation, it is the ground: drawn on the licensor's salt, capped by
+  // exposure, and exempt from the gate that its own outcomes will later feed.
+  if (!g.calib_measured && !g.in_canary)      return { V_DRAFT,    RS_UNCALIBRATED };
   if (g.in_audit)                             return { V_DRAFT,    RS_AUDIT };
   // E3c: the thin test reads the calibrated wrong-rate when the writ says so;
   // the raw direction against the thin margin otherwise
@@ -137,6 +150,19 @@ inline GateOut gate(const GateIn& g, const Writ& wr) {
   if (g.budget_left <= 0.f && g.rung < 3)     return { V_HOLD,     RS_NO_BUDGET };
   if (g.exposure_left < g.value)              return { V_HOLD,     RS_EXPOSURE };   // E0: risk in flight is capped; an act waits, never a person's decision
   return { V_ACT, g.in_canary ? RS_CANARY : RS_OK };
+}
+
+// Z0 · THE VERBS A CONSTITUTION WITHOUT PEOPLE HAS. The order of refusal above is
+// unchanged and is still the whole of the decision; this says only which verbs
+// can be emitted at all. With nobody inside the boundary a DRAFT has nobody to
+// key it and a WARRANT has nobody to sign it, so each degrades to a HOLD keeping
+// its own reason, which is the estate's oldest safety law said once more: running
+// out of people degrades to holding and never to acting. Nothing widens here.
+inline GateOut gate(const GateIn& g, const Writ& wr) {
+  const GateOut v = gate_verdict(g, wr);
+  if (!g.autark) return v;
+  if (v.verdict == V_DRAFT || v.verdict == V_WARRANT) return { V_HOLD, v.reason };
+  return v;
 }
 
 

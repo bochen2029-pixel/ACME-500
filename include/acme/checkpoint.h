@@ -130,12 +130,14 @@ inline void ser(Ser& s, const Resident& r) {
   s.pod(r.sup.NC); s.vec(r.sup.cre); s.vec(r.sup.rem); s.pod(r.wr); s.pod(r.adjudication_budget_min);
   s.pod(r.NC); s.pod(r.NS); s.pod(r.lr); s.vec(r.memo_hash); s.vec(r.memo_base); s.vec(r.epoch_seen);
   ser(s, r.calib); s.vec(r.cal_dir); s.vec(r.cal_choice); s.vec(r.cal_human);
+  s.vec(r.counsel_hash); s.vec(r.counsel_valid); s.vec(r.counsel_choice); s.vec(r.counsel_comp);
 }
 inline void des(Des& d, Resident& r) {
   des(d, r.fd); des(d, r.C); d.vec(r.hand.ledger); d.pod(r.hand.n_undone); des(d, r.st);
   d.pod(r.sup.NC); d.vec(r.sup.cre); d.vec(r.sup.rem); d.pod(r.wr); d.pod(r.adjudication_budget_min);
   d.pod(r.NC); d.pod(r.NS); d.pod(r.lr); d.vec(r.memo_hash); d.vec(r.memo_base); d.vec(r.epoch_seen);
   des(d, r.calib); d.vec(r.cal_dir); d.vec(r.cal_choice); d.vec(r.cal_human);
+  d.vec(r.counsel_hash); d.vec(r.counsel_valid); d.vec(r.counsel_choice); d.vec(r.counsel_comp);
 }
 inline void ser(Ser& s, const Ladder& L) {
   s.pod(L.NC); s.vec(L.lic); s.pod(L.alpha_promote); s.pod(L.alpha_demote); s.pod(L.term_days);

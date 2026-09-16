@@ -54,7 +54,8 @@ set(LIE_LINE_30 "O59")   # lie 30 = O59, the regime detector (a detector that ne
 set(LIE_LINE_31 "O47")   # lie 31 = O47, the calibration harness (a confidently-wrong judge admitted on a class)
 set(LIE_LINE_32 "O48")   # lie 32 = O48, the account folds from the tape (a fold that drops the meetings)
 set(LIE_LINE_33 "O42")   # lie 33 = O42, the tape of tapes (a row of a sealed period folded into the period after it)
-foreach(N RANGE 0 33)
+set(LIE_LINE_34 "O60")   # lie 34 = O60, the human lane is empty (a cell that escalates to a seat under the autark constitution)
+foreach(N RANGE 0 34)
   add_test(NAME lie_${N} COMMAND acme --selftest --lie ${N})
   set_tests_properties(lie_${N} PROPERTIES
     PASS_REGULAR_EXPRESSION "\\[PASS\\] ${LIE_LINE_${N}} "

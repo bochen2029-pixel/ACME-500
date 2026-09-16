@@ -115,6 +115,16 @@ struct Writ {
   // thin_margin (0 = the raw margin, as before).
   int   m_calib    = 30;
   float thin_wrong = 0.f;
+  // Z0 · AUTARK: THE CONSTITUTION'S MODE. 1 = there is no person inside the
+  // boundary. It is authored, never learned, and it changes what verbs exist
+  // rather than what the machine believes: a draft has nobody to key it and a
+  // warrant has nobody to sign it, so both degrade to a hold (running out of
+  // people degrades to holding and never to acting), and the retained stratum
+  // routes to the tier above instead of to a seat, which is what supplies the
+  // paired baseline when no incumbent exists. Whether the world outside the
+  // boundary has people in it is not this flag's business: the boundary is the
+  // boundary, and a counterparty that is a person is still outside it.
+  uint8_t autark = 0;
   int   read_budget  = 50000;   // C1: Judge::read calls per period, a dial [BUDGET]: one resident
                                 // card at ~0.6 reads a second over a day-long period. Behind the port a
                                 // read is a forward pass; the field spends them ripest-first on cells

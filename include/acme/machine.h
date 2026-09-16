@@ -329,6 +329,7 @@ struct MachineStats {
   uint64_t shared_flip_band = 0;   //     of those reads: the band changed
   uint64_t incr_checked = 0;       // incremental updates re-read against the judge (--check-shared)
   uint64_t incr_discrepancies = 0; //   of which the judge's sign or band disagreed with the certificate
+  uint64_t counsel_hits = 0;       // Z0: rentals the counsel memo answered without paying (F12)
   uint64_t exposure_holds = 0;     // acts held because the outstanding exposure would exceed the cap
   double   out_max = 0.0;          // the largest outstanding exposure seen at a period's close
   void init(int nc) { acted_by_class.assign(nc, 0); reason_count.assign(RS_N, 0); }
@@ -357,11 +358,16 @@ struct Resident {
   bool    lie_silent_proposal = false;   // O30's lie: a proposal folded into the memo without its row. Never set outside the battery.
   bool    lie_stratum_off = false;       // O20's lie: a resident that acts on retained cells of the wide band. Never set outside the battery.
   bool    lie_calib_blind = false;       // O47's lie: a resident that admits a class whose curve is not monotone. Never set outside the battery.
+  bool    lie_human_leak = false;        // O60's lie: under the autark constitution, one declined rental in 500 escalates to a seat that does not exist. Never set outside the battery.
   // E3c: THE CALIBRATION. The counts the curve is measured from (the replay's
   // agreement cases, then every live outcome on a cell whose executed choice
   // was the last proposal's), frozen per term into CALIB rows; the gate reads
   // the frozen curve back from the ledger's fold of those rows, never from here.
   Calib   calib;
+  // Z0: the counsel memo. A rented mind's answer, keyed on the frame hash it was
+  // read under, so the same question is never bought twice (F12).
+  std::vector<uint32_t> counsel_hash; std::vector<uint8_t> counsel_valid;
+  std::vector<int8_t>   counsel_choice; std::vector<float> counsel_comp;
   std::vector<float>   cal_dir;          // [oid] |direction| of the cell's last proposal (the live half of the curve)
   std::vector<int8_t>  cal_choice;       // [oid] the last proposal's choice, -1 none
   std::vector<int8_t>  cal_human;        // [oid] the person's decision on the cell, -1 none
@@ -608,6 +614,7 @@ inline void Resident::period(Ledger& L, Firm& f, Tape& tape, const Store& store,
     // E3c: the calibrated wrong-rate and the key's admissibility, from the ledger's fold of this term's CALIB rows
     g.calib_measured = L.calib_measured_of(c) && L.calib_monotone_of(c);
     g.calib_wrong = L.calib_wrong_of(c, std::fabs(direction));
+    g.autark = wr.autark != 0;                                    // Z0: the constitution's mode, authored, never learned
     if (lie_calib_blind && L.calib_measured_of(c)) g.calib_measured = true;   // THE LIE (O47): a non-monotone curve admitted
     if (lie_ignore_cap && (o.id % 100u) == 7u) g.exposure_left = 1e30f;   // THE LIE (O38)
     if (lie_effect_under_off && L.sw == SW_OFF && (i % 500) == 7) g.sw = SW_LIVE;   // THE LIE (O19)
@@ -638,15 +645,31 @@ inline void Resident::period(Ledger& L, Firm& f, Tape& tape, const Store& store,
         if (g.exposure_left < g.value) { ++st.exposure_holds; mhold(RS_EXPOSURE, b, direction); break; }
         // rent a bigger mind for this one cell. It costs money and, because a
         // human still reads the answer at low rungs, a little supervision.
-        ++st.frontier; st.frontier_calls += 1.0;
-        // the rented mind reads the same frame, with less noise. It cannot
-        // buy coverage: a fact nobody recorded is not available at any price.
-        const Proposal fr = frontier.read(frames[i]);
-        // E4: THE RENTAL IS A ROW. A rented mind's proposal, keyed on the frame hash it
-        // was read under (a = its judge hash, b = the frame hash), so the counsel memo of
-        // E1' has its fold and the account can count rentals against distinct cells.
-        tape.put(R_COUNSEL, day, o.id, c, -1, ARM_MACHINE, (int)fr.judge_hash, (int)memo_hash[o.id],
-                 4.0f * fr.signal * (0.35f + 0.65f * fr.completeness_hat), fr.completeness_hat, b, shadow ? RF_SHADOW : 0, 3, PROV_M);
+        // Z0 · THE COUNSEL MEMO (F12 closed). A rented mind reads a FRAME, not a
+        // period. The same cell under the same frame hash has already been read
+        // and its answer is on the tape; renting it again is a round trip that
+        // buys nothing and it is the defect a zero-seat firm cannot survive,
+        // because there is no warrant seat to take the cell off the loop. One
+        // transformation per frame: the memo answers, and the rental is paid
+        // once. A changed frame is a new question and is rented again.
+        if (o.id >= counsel_hash.size()) { const size_t n = (size_t)o.id + 1024; counsel_hash.resize(n, 0); counsel_valid.resize(n, 0); counsel_choice.resize(n, -1); counsel_comp.resize(n, 0.f); }
+        Proposal fr;
+        if (counsel_valid[o.id] && counsel_hash[o.id] == memo_hash[o.id]) {
+          fr.choice = counsel_choice[o.id]; fr.completeness_hat = counsel_comp[o.id]; fr.judge_hash = frontier.hash();
+          ++st.counsel_hits;
+        } else {
+          ++st.frontier; st.frontier_calls += 1.0;
+          // the rented mind reads the same frame, with less noise. It cannot
+          // buy coverage: a fact nobody recorded is not available at any price.
+          fr = frontier.read(frames[i]);
+          counsel_hash[o.id] = memo_hash[o.id]; counsel_valid[o.id] = 1;
+          counsel_choice[o.id] = (int8_t)fr.choice; counsel_comp[o.id] = fr.completeness_hat;
+          // E4: THE RENTAL IS A ROW, keyed on the frame hash it was read under (a = its
+          // judge hash, b = the frame hash), so the memo is a fold and the account counts
+          // rentals against distinct frames.
+          tape.put(R_COUNSEL, day, o.id, c, -1, ARM_MACHINE, (int)fr.judge_hash, (int)memo_hash[o.id],
+                   4.0f * fr.signal * (0.35f + 0.65f * fr.completeness_hat), fr.completeness_hat, b, shadow ? RF_SHADOW : 0, 3, PROV_M);
+        }
         const float boost = 0.72f;
         if (frontier.act_coin(c, o.id, boost)) {               // F16: the coin is the judge's, on its own key
           if (!shadow) o.completeness = fr.completeness_hat;
@@ -654,6 +677,13 @@ inline void Resident::period(Ledger& L, Firm& f, Tape& tape, const Store& store,
                            direction + (direction > 0 ? 0.9f : -0.9f), b, 3, nov, sharp, shadow)) break;   // via 3: a rented mind acted
           ++st.acted; ++st.acted_by_class[c];
           st.sup_removed_min += would_cost; sup.add_removed(c, b, would_cost);
+        } else if (wr.autark && !(lie_human_leak && (o.id % 500u) == 3u)) {   // THE LIE (O60): one cell leaks to a seat
+          // Z0 · ESCALATION TERMINATES. There is no warrant seat inside the
+          // boundary, so a declined rental cannot be handed to one. It holds,
+          // with its reason and its margin on the tape, and it is not read again
+          // until its frame changes. Running out of certainty degrades to
+          // holding and never to acting, exactly as running out of people did.
+          mhold(RS_UNSURE, b, direction);
         } else {
           if (!shadow) o.state = OB_ESCALATED;
           ++st.warrant; ++adj_used;

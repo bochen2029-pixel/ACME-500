@@ -78,6 +78,10 @@ struct Args {
   float shift_mult = 1.f;
   float thin_wrong = -1.f;       // --thin-wrong X: the gate reads the calibrated wrong-rate against X where it read the raw margin (the writ's 0 = off)   [E3c]
   int   m_calib = -1;            // --m-calib N: cells graded on the machine's own choice before a key's curve is measured (the writ's 30)   [E3c]
+  bool  autark = false;          // --autark: no person inside the boundary. No human arm is built; the bootstrap admits the reversible
+                                 // classes at the canary rung; a draft and a warrant degrade to a hold; the retained stratum routes to
+                                 // the tier above. The zero-seat firm (Z0)
+  int   bootstrap_rung = 1;      // --bootstrap-rung N: the founding grant, what the constitution hands a class before any evidence (Z0)
 };
 static Args parse(int argc, char** argv) {
   Args a;
@@ -96,6 +100,8 @@ static Args parse(int argc, char** argv) {
     else if (!strcmp(s, "--shift-mult")) a.shift_mult = next_f(1.f);
     else if (!strcmp(s, "--thin-wrong")) a.thin_wrong = next_f(-1.f);
     else if (!strcmp(s, "--m-calib")) a.m_calib = next_i(-1);
+    else if (!strcmp(s, "--autark")) a.autark = true;
+    else if (!strcmp(s, "--bootstrap-rung")) a.bootstrap_rung = next_i(1);
     else if (!strcmp(s, "--days")) a.days = next_i(260);
     else if (!strcmp(s, "--warm")) a.warm = next_i(180);
     else if (!strcmp(s, "--futures")) a.futures = next_i(64);
@@ -255,6 +261,8 @@ struct MachineRun {
   std::unique_ptr<TapeFile> file;               // the durable tape, if --tape
   int ckpt_every = 0; std::string tape_dir;
   LaneSet lanes;                                // F0a: the per-lane chains the world port seals each period
+  int  bootstrap_admitted = 0;                  // Z0: bands the constitution admitted at founding
+  long refused_warrant = 0, refused_counterparty = 0;   // Z0: classes a zero-seat firm does not sell
   MachineRun(const Args& a_, Run& r, int warm_, int total_) : a(a_), R(r), warm(warm_), total(total_), store(&r.w) {}
 
   Judge* frontier_judge = nullptr;              // E3: the rented mind behind the port, overridable (O31 stands the boundary judge there too)
@@ -300,7 +308,7 @@ struct MachineRun {
       const size_t period_from = R.tape.size();                                      // E3c: the day's rows begin here; the calibration ingests them
       gov.draw_strata(R.L, R.tape);                                                  // the governor draws first
       res.period(R.L, R.f, R.tape, store, *judge, *frontier_judge, gov.lad);         // the resident goes next: it never sleeps
-      human_day(R.w, R.L, R.f, R.tape, R.hs, rep, (uint32_t)d);
+      if (!a.autark) human_day(R.w, R.L, R.f, R.tape, R.hs, rep, (uint32_t)d);        // Z0: there is no human arm inside the boundary
       const size_t settled_from = R.tape.size();
       world_settle(R.w, R.L, R.f, R.tape, (uint32_t)d);
       gov.grade(R.tape, settled_from, R.L);                                          // the governor folds the day's OUTCOME rows (F24: against the act's term's bar)
@@ -336,6 +344,7 @@ static AutoOut run_machine(const Args& a, Run& R, int warm_days, int total_days,
   if (a.m_min > 0) R.f.writ.m_min = a.m_min;                // E3: the bar's sample floor, authored
   if (a.thin_wrong >= 0.f) R.f.writ.thin_wrong = a.thin_wrong;   // E3c: the calibrated thin test
   if (a.m_calib > 0) R.f.writ.m_calib = a.m_calib;
+  R.f.writ.autark = a.autark ? 1 : 0;                       // Z0: the constitution's mode, before anything reads the writ
   if (a.tape) {                                             // D1: the durable tape sees every row from the header on
     M.tape_dir = a.tape; M.ckpt_every = a.ckpt_every;
     M.file.reset(new TapeFile()); uint8_t genesis[32] = {0};
@@ -343,8 +352,28 @@ static AutoOut run_machine(const Args& a, Run& R, int warm_days, int total_days,
     R.tape.sink = M.file.get();
   }
   // ---- PHASE 0/1: the boundary log and the warm history. Nobody uses anything.
-  run_human(R, warm_days, true, 0, switch_parse(a.sw), &a);
-  M.C = compile_from_tape(R.tape, R.w.NC, a.seed, true);
+  // Z0: under the autark constitution there is no human arm to run and no history
+  // to compile from — nobody has ever worked here. The join graph therefore starts
+  // FULL (read every system) and narrows as the compile sees what a class actually
+  // opened; a firm with no fossilised screens pays for that at the read budget and
+  // the account prints it. The warm period still runs, so arrivals accumulate and
+  // the machine meets a real backlog at day one rather than an empty world.
+  if (!a.autark) {
+    run_human(R, warm_days, true, 0, switch_parse(a.sw), &a);
+    M.C = compile_from_tape(R.tape, R.w.NC, a.seed, true);
+  } else {
+    R.hs.init(R.w.NC); if (R.L.NC == 0) R.init_ledger();    // what run_human did for the human planet, and nothing else of it
+    if (R.tape.size() == 0) { R.tape.header(MODE_SYNTHETIC, switch_parse(a.sw), alphabet_hash()); R.L.apply(R.tape.rec.back()); }
+    LaneSet warm_lanes;
+    for (int d = 0; d < warm_days; ++d) {                   // the world fills; nobody inside the boundary touches a cell
+      world_arrive(R.w, R.L, R.tape, (uint32_t)d);
+      tick_fold(R.tape, R.L, (uint32_t)d, wall_for(a, d));
+      world_settle(R.w, R.L, R.f, R.tape, (uint32_t)d);
+      seal_period(R.tape, warm_lanes, (uint32_t)d);
+    }
+    M.C = compile_from_tape(R.tape, R.w.NC, a.seed, true);
+    for (int c = 0; c < R.w.NC; ++c) { M.C.join_graph[c] = 0xFFFFFFFFu; M.C.n_systems[c] = 32; }
+  }
 
   // ---- PHASE 2: the resident, compiled, not yet acting; the judges behind the
   // port; the governor with the salt and the empty licence table keyed to the judge
@@ -352,10 +381,22 @@ static AutoOut run_machine(const Args& a, Run& R, int warm_days, int total_days,
   M.res.init(R.w.NC, R.f.size(), M.C, R.f.writ, a.seed);
   M.gov.init(R.w.NC, R.f.writ, M.C.arrivals_per_day, alphabet_hash(), M.judge->hash(), M.C.template_hash);
   M.gov.seed_history(R.tape);                                // E3: the shadow record: the incumbent's outcomes before the machine, per band
+  // Z0 · THE FOUNDING ACT. With no history there is no agreement band and no
+  // class is ever admitted, so nothing acts, nothing is graded, and nothing
+  // licenses: the deadlock a firm with no people starts in. The constitution
+  // breaks it once, at founding, and nothing learned does: every reversible class
+  // the law does not reserve and no counterparty demands a person for is admitted
+  // at the CANARY RUNG ONLY. Every rung above it is still earned from the world.
+  if (a.autark) {
+    long refused_w = 0, refused_c = 0;
+    const int admitted = M.gov.bootstrap_admit(0, R.tape, refused_w, refused_c, a.bootstrap_rung);
+    M.bootstrap_admitted = admitted; M.refused_warrant = refused_w; M.refused_counterparty = refused_c;
+  }
   g_boundary_ladder = &M.gov.lad;                            // E3: O31's judge may read the frozen bars for this run's duration (the instrument's side)
   M.gov.lie_band_dependent = (a.lie == 19);
   M.gov.lie_regime_deaf = (a.lie == 30);                     // O59's lie
   M.res.lie_stratum_off = (a.lie == 26);                     // O20's lie
+  M.res.lie_human_leak = (a.lie == 34);                      // O60's lie: a cell that escalates to a seat under the autark constitution
   M.res.lie_calib_blind = (a.lie == 31);                     // O47's lie, with the plant judge inverted on one class (make_judges)
   M.res.lie_reads_clock = (a.lie == 23);                     // O25's lie
   M.res.lie_effect_under_off = (a.lie == 22);                // O19's lie
@@ -1281,6 +1322,7 @@ static int cmd_selftest(const Args& a) {
           g.sw = F.sw; g.value = cls_spec(r.cls).value; g.exposure_left = 1e30f;   // and the exposure
           g.calib_measured = F.calib_measured_of(r.cls) && F.calib_monotone_of(r.cls);   // E3c: the curve in force, from the CALIB rows folded so far
           g.calib_wrong = F.calib_wrong_of(r.cls, std::fabs(m->direction));
+          g.autark = A.f.writ.autark != 0;                        // Z0: the constitution's mode, from the writ
           const GateOut v = gate(g, A.f.writ);
           const int want = (r.via == 1) ? V_ACT : (r.via == 2) ? V_DRAFT : (r.via == 3) ? V_FRONTIER : V_WARRANT;
           if (v.verdict == want) ++ok_n; else { ++mismatched; if (first_bad_via < 0) { first_bad_via = r.via; first_bad_verdict = v.verdict; } }
@@ -1658,6 +1700,43 @@ static int cmd_selftest(const Args& a) {
                T.rec.size(), (int)LANE_N, lanes_txt, seals, seal_bad, late, fd.fields, fd.fields ? ", first: " : "", fd.fields ? fd.first : "", moved, T.rec.size());
       ck(LIE == 33 ? !ok : ok, "O42  the tape of tapes: every SEAL re-derives from a cold split, and the lanes merged in the published order fold to the flat tape's ledger", buf);
     }
+    // --- O60 (O-ZERO): THE HUMAN LANE IS EMPTY. Under the autark constitution
+    //          there is no person inside the boundary, and that is a property of
+    //          the TAPE and not of a policy: no row may carry a seat, human
+    //          provenance, or the human arm's kinds, and the human lane of the
+    //          F0a roster must hold zero rows. It is the zero-headcount oracle,
+    //          and the only number in this design that may never be a fraction.
+    //          The lie: one declined rental in five hundred escalates to a seat.
+    {
+      Args az = aa; az.autark = true; az.lie = (LIE == 34) ? 34 : -1;
+      az.n = 60; az.warm = 10; az.days = 40; az.bootstrap_rung = 2;
+      Run Z; Z.f = build_acme(az.n, 7, 7); Z.w = make_world(7); Z.w.demand_scale = 1.5f;
+      const AutoOut oz = run_machine(az, Z, az.warm, az.days, false);
+      long human_rows = 0, human_kinds = 0, lane_human = 0, acts = 0, escalations = 0, parked = 0;
+      for (const Rec& r : Z.tape.rec) {
+        if (r.seat >= 0) ++human_rows;
+        if (r.prov == PROV_H) ++human_rows;
+        if (r.type == R_DECIDE || r.type == R_ASSIGN || r.type == R_ACT || r.type == R_MEETING) ++human_kinds;
+        // ESCALATION TERMINATES. The row markers alone cannot see this leak: an
+        // escalation written by the machine carries seat -1 and machine
+        // provenance, so it reads as a machine row while being a cell handed to
+        // a seat that does not exist and will wait forever. The lie arm found
+        // this gap in the first version of this oracle. Under the autark
+        // constitution escalation ends in an experiment or a hold, so there is
+        // no ESCALATE row at all and no cell is left parked.
+        if (r.type == R_ESCALATE) ++escalations;
+        if (lane_of(r) == LANE_HUMAN) ++lane_human;
+        if (r.type == R_EFFECT && !(r.flags & RF_SHADOW)) ++acts;
+      }
+      for (const Obligation& o : Z.L.ob) if (o.state == OB_ESCALATED) ++parked;
+      // the loop must also have done something: an empty firm trivially has no human rows
+      const bool ok = human_rows == 0 && human_kinds == 0 && lane_human == 0
+                   && escalations == 0 && parked == 0 && acts > 0 && oz.ms.acted > 0;
+      snprintf(buf, sizeof buf, "(%zu rows over %d days with nobody inside the boundary: %ld carry a seat or human provenance, %ld are DECIDE/ASSIGN/ACT/MEETING, %ld sit on the human lane, %ld escalate to a seat and %ld cells are left parked waiting for one; the firm acted %llu times unattended and rented %llu times)",
+               Z.tape.size(), az.days - az.warm, human_rows, human_kinds, lane_human, escalations, parked,
+               (unsigned long long)oz.ms.acted, (unsigned long long)oz.ms.frontier);
+      ck(LIE == 34 ? !ok : ok, "O60  the human lane is empty: under the autark constitution no row carries a seat and the firm still acts", buf);
+    }
   }
 
   // --- O2: the gate can never widen. Exhaustive over the input lattice.
@@ -1693,12 +1772,18 @@ static int cmd_selftest(const Args& a) {
              // E3: the retained stratum holds every point, at every rung, for a person
              GateIn gt = g; gt.to_incumbent = true; const GateOut vt = gate(gt, wr);
              if (vt.verdict != V_HOLD || (vt.reason != RS_RETAINED && vt.reason != RS_BLOCKED && vt.reason != RS_SWITCH_OFF)) ok = false;
-             // E3c: an unmeasured key never acts and never rents: unmeasured is never safe
-             GateIn gc = g; gc.calib_measured = false; const GateOut vc = gate(gc, wr);
+             // E3c: an unmeasured key never acts and never rents — EXCEPT on the
+             // canary, which Z0 exempted because the canary is the instrument that
+             // buys the first measurement and gating it on the measurement is a
+             // deadlock (nothing executes, so nothing is measured, so nothing may
+             // execute). Off the canary the E3c rule is unchanged and absolute.
+             GateIn gc = g; gc.calib_measured = false; gc.in_canary = false; const GateOut vc = gate(gc, wr);
              if (vc.verdict == V_ACT || vc.verdict == V_FRONTIER) ok = false;
+             GateIn gk = g; gk.calib_measured = false; gk.in_canary = true; const GateOut vk = gate(gk, wr);
+             if (vk.verdict == V_ACT && vk.reason != RS_CANARY) ok = false;   // and when it does act there, it acts AS a canary
            }
     if (LIE == 2) ok = !ok;                                       // THE LIE
-    snprintf(buf, sizeof buf, "(%ld lattice points, %ld reached ACT; pressure never widened; off held every point; an exhausted exposure allowance held every act and moved nothing else; retained held every point)", cases, acts);
+    snprintf(buf, sizeof buf, "(%ld lattice points, %ld reached ACT; pressure never widened; off held every point; an exhausted exposure allowance held every act and moved nothing else; retained held every point; an unmeasured key never acted off the canary, and on it acted only as one)", cases, acts);
     ck(LIE == 2 ? !ok : ok, "O2   the gate never authorises outside its licence", buf);
   }
 
